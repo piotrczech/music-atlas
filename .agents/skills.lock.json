@@ -1,0 +1,20 @@
+[
+  {
+    "name": "ponytail",
+    "repository": "https://github.com/DietrichGebert/ponytail",
+    "revision": "09c434ab73ca43761c5d8b0c5d341926c2fba710",
+    "path": "skills/ponytail"
+  },
+  {
+    "name": "frontend-design",
+    "repository": "https://github.com/anthropics/skills",
+    "revision": "dbd4588f9e1033efb41dad4bef2f7947c8993d44",
+    "path": "skills/frontend-design"
+  },
+  {
+    "name": "uv-package-manager",
+    "repository": "https://github.com/wshobson/agents",
+    "revision": "0874a27b17a22e2b7c2e2bcd725768e0803cad06",
+    "path": "plugins/python-development/skills/uv-package-manager"
+  }
+]

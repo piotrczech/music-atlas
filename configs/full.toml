@@ -1,0 +1,13 @@
+seed = 42
+# 0 means the entire validated manifest, never the test split for fitting.
+max_tracks = 0
+sample_rate = 22050
+window_seconds = 10
+windows_per_track = 3
+
+[dataset]
+name = "fma-full"
+split = "artist-disjoint-v1"
+
+[experiment]
+name = "music-atlas-full"

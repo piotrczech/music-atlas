@@ -1,0 +1,12 @@
+seed = 42
+max_tracks = 128
+sample_rate = 22050
+window_seconds = 10
+windows_per_track = 1
+
+[dataset]
+name = "fma-full"
+split = "artist-disjoint-v1"
+
+[experiment]
+name = "music-atlas-quick"

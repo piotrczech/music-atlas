@@ -1,0 +1,33 @@
+services:
+  api:
+    build: .
+    ports: ["127.0.0.1:8000:8000"]
+    healthcheck:
+      test: ["CMD", "/app/.venv/bin/python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./web
+      args:
+        API_INTERNAL_URL: http://api:8000
+    ports: ["127.0.0.1:3000:3000"]
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  mlflow:
+    build:
+      context: .
+      dockerfile: scripts/mlflow.Dockerfile
+    profiles: ["tracking"]
+    ports: ["127.0.0.1:5000:5000"]
+    volumes: ["tracking:/tracking"]
+    restart: unless-stopped
+
+volumes:
+  tracking:

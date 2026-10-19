@@ -1,0 +1,11 @@
+.git
+.venv
+.agents
+.claude
+web
+data
+artifacts
+outputs
+research
+**/__pycache__
+**/.pytest_cache

@@ -1,0 +1,21 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.env
+.env.*
+!.env.example
+data/
+artifacts/
+outputs/
+mlruns/
+*.db
+node_modules/
+.next/
+*.tsbuildinfo
+.DS_Store
+
+# Keep only the current stage's task briefs in shared Git history.
+/tasks/E[2-5]-*.md
+/tasks/index.csv

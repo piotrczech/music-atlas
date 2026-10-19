@@ -1,0 +1,45 @@
+[project]
+name = "music-atlas"
+version = "0.1.0"
+description = "Compare audio representations, music genres and musical neighbours."
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "fastapi>=0.115,<1",
+  "numpy>=2.2,<3",
+  "python-multipart>=0.0.20,<1",
+  "scipy>=1.15,<2",
+  "soundfile>=0.13,<1",
+  "uvicorn>=0.34,<1",
+]
+
+[project.optional-dependencies]
+research = [
+  "librosa>=0.11,<2",
+  "matplotlib>=3.10,<4",
+  "pandas>=2.2,<3",
+  "pyarrow>=19,<30",
+  "scikit-learn>=1.6,<2",
+]
+tracking = ["mlflow>=3.1,<4"]
+training = ["torch>=2.6,<3"]
+
+[dependency-groups]
+dev = ["httpx>=0.28,<1", "pytest>=8.3,<10", "ruff>=0.11,<1"]
+
+[project.scripts]
+atlas = "music_atlas.cli:main"
+
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
