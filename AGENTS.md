@@ -6,6 +6,8 @@ and the existing implementation before editing. Project documentation is in Engl
 
 - Use Python 3.12 and uv. Keep reusable logic in `src/music_atlas/`; CLI and FastAPI
   call the same functions. The frontend uses Next.js App Router and TypeScript.
+- Write project documentation and all user-facing interface text in English. Keep screenshots
+  and examples aligned with the English interface.
 - Keep changes focused and readable. Reuse existing modules; introduce an abstraction
   only when the implementation needs it. Comments should explain non-obvious decisions.
 - Follow the track, representation and artifact formats in `docs/EXPERIMENTS.md`.

@@ -1,3 +1,5 @@
+![Music Atlas demo](docs/assets/demo.png)
+
 # Music Atlas
 
 Music Atlas explores how different representations of audio capture musical structure.
@@ -35,14 +37,6 @@ Classification will be compared with macro-F1, micro-F1 and mean average precisi
 Retrieval will use precision@10 and nDCG@10, alongside listening examples and resource costs.
 The held-out test split is reserved for final evaluation; artist and duplicate groups stay within
 one split to reduce leakage.
-
-## Current demo
-
-The interface currently supports single-file audio inspection: upload and playback, waveform
-and power-spectrum plots, and basic acoustic measurements. The three model cards are placeholders
-for planned work.
-
-![Current Music Atlas demo: single-file audio inspection and planned representation branches](docs/assets/demo.png)
 
 ## Data and computation
 
