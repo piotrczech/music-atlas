@@ -120,13 +120,11 @@ def probe(url: str, output_dir: Path) -> dict:
         ),
         "top_level": sorted({m.filename.split("/")[0] for m in files}),
         "examples": [m.filename for m in files[:5]],
-        # The WCSS allocation is quoted in TB; GiB figures alone understate the comparison.
         "archive_bytes": remote.size,
         "extracted_bytes": extracted,
         "archive_gib": round(remote.size / GIB, 2),
         "extracted_gib": round(extracted / GIB, 2),
         "archive_and_extracted_gib": round(both / GIB, 2),
-        "archive_and_extracted_tb": round(both / 1e12, 3),
         "empty_files": sum(m.file_size == 0 for m in files),
         "largest_file_mib": round(max((m.file_size for m in files), default=0) / 2**20, 1),
         "checksum_entries": len(listed),

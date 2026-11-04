@@ -82,8 +82,9 @@ the `training` extra is not a cluster-specific GPU installation profile.
 The FMA-full archive is approximately 879 GiB. `uv run atlas fma-probe` reads only its
 central directory and checksum list through HTTP Range requests and writes
 `fma_full_probe.json` to the outputs directory. Measured on 2026-11-04, the archive holds
-106,574 bzip2-compressed MP3s that extract to 930 GiB, so storing the archive during a full
-extraction would need 1,809 GiB (1.94 TB) of the 2 TB allocation.
+106,574 bzip2-compressed MP3s that extract to 930 GiB. `PD-info` reports the project quota
+in binary units: `1.953T` is 2,000 GiB, shared by the team, with a separate limit of
+1,048,576 files. Storing the archive during a full extraction would need 1,809 GiB of it.
 
 `uv run atlas fma-download` therefore never stores the archive. It fetches each member with
 one Range request, decompresses it, and renames it into `$ATLAS_DATA_DIR/fma/fma_full/` only
@@ -100,6 +101,12 @@ files on disk and writes `$ATLAS_DATA_DIR/manifests/fma_full_inventory.csv`, wit
 in `fma_full_inventory.json` in the outputs directory. It only lists files, so it is quick
 to rerun after each download pass; `sha1sum -c --quiet checksums` in `fma/fma_full/`
 re-verifies their content.
+
+FMA-full then occupies 930 GiB and about 107,000 files, leaving roughly 1,070 GiB and
+940,000 files for environments, caches and results. The file limit is the tighter one for
+derived data: one file per track or window for each representation would use 10–30% of it,
+so write sharded arrays. Check `PD-info` after the first `uv sync`, since each Python
+environment adds tens of thousands of files.
 
 Retain the compressed source audio. Bound spectrogram caches and use sharded outputs.
 Job-local `TMPDIR` is temporary and must not hold the only copy of results.
