@@ -95,6 +95,12 @@ exits non-zero until a rerun clears them. Start with `--limit 200` to measure th
 then choose `--workers`. The download needs internet access, so confirm which WCSS node
 may run a multi-hour transfer before starting it.
 
+`uv run atlas fma-inventory` then lists every track in `fma_full/checksums` against the
+files on disk and writes `$ATLAS_DATA_DIR/manifests/fma_full_inventory.csv`, with a summary
+in `fma_full_inventory.json` in the outputs directory. It only lists files, so it is quick
+to rerun after each download pass; `sha1sum -c --quiet checksums` in `fma/fma_full/`
+re-verifies their content.
+
 Retain the compressed source audio. Bound spectrogram caches and use sharded outputs.
 Job-local `TMPDIR` is temporary and must not hold the only copy of results.
 

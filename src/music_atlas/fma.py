@@ -1,6 +1,7 @@
 """Access to the published FMA archives."""
 
 import collections
+import csv
 import hashlib
 import io
 import json
@@ -18,6 +19,7 @@ ARCHIVES = ("fma_full", "fma_metadata")
 BLOCK = 1 << 20
 COMPRESSION = {0: "stored", 8: "deflate", 12: "bzip2", 14: "lzma"}
 GIB = 2**30
+INVENTORY_FIELDS = ("track_id", "audio_path", "status", "size_bytes", "sha1")
 
 
 class HTTPRangeFile(io.RawIOBase):
@@ -76,6 +78,16 @@ def archive_name(url: str) -> str:
     return PurePosixPath(urllib.parse.urlparse(url).path).stem
 
 
+def parse_checksums(listing: bytes, root: PurePosixPath) -> dict[str, str]:
+    """Map each path in a `sha1sum` listing, prefixed with `root`, to its SHA-1."""
+    listed = {}
+    for line in listing.decode().splitlines():
+        if line.strip():
+            sha1, path = line.split(maxsplit=1)
+            listed[str(root / path.lstrip("*"))] = sha1
+    return listed
+
+
 def read_index(url: str) -> tuple[HTTPRangeFile, list[zipfile.ZipInfo], dict[str, str], bytes]:
     """Read a remote archive's members and its `checksums` file as {member name: SHA-1}."""
     remote = HTTPRangeFile(url)
@@ -85,12 +97,7 @@ def read_index(url: str) -> tuple[HTTPRangeFile, list[zipfile.ZipInfo], dict[str
         listing = archive.read(checksums) if checksums else b""
     # Checksum paths are relative to the directory holding the checksum file.
     root = PurePosixPath(checksums.filename).parent if checksums else PurePosixPath()
-    listed = {}
-    for line in listing.decode().splitlines():
-        if line.strip():
-            sha1, path = line.split(maxsplit=1)
-            listed[str(root / path.lstrip("*"))] = sha1
-    return remote, files, listed, listing
+    return remote, files, parse_checksums(listing, root), listing
 
 
 def probe(url: str, output_dir: Path) -> dict:
@@ -237,3 +244,58 @@ def download(url: str, dest: Path, report_dir: Path, limit: int = 0, workers: in
     report_dir.mkdir(parents=True, exist_ok=True)
     (report_dir / f"{archive_name(url)}_download.json").write_text(json.dumps(report, indent=2))
     return report
+
+
+def inventory(data_dir: Path, report_dir: Path) -> dict:
+    """Link every track in `fma_full/checksums` to its audio file and flag unlisted files.
+
+    Writes `manifests/fma_full_inventory.csv` with paths relative to `data_dir`. Files reach
+    their final name only after `download` verifies them, so this only lists them;
+    `sha1sum -c checksums` in the archive directory re-verifies their content.
+    """
+    archive = PurePosixPath("fma", "fma_full")
+    checksums = data_dir / archive / "checksums"
+    if not checksums.is_file():
+        raise OSError(f"{checksums} not found; run `atlas fma-download` first.")
+    listed = parse_checksums(checksums.read_bytes(), archive)
+    on_disk = {}
+    for folder, _, names in (data_dir / archive).walk():
+        for name in names:
+            path = folder / name
+            on_disk[path.relative_to(data_dir).as_posix()] = path.stat().st_size
+    known = {str(archive / "README.txt"), str(archive / "checksums")}
+
+    rows = []
+    for path in sorted((listed.keys() | on_disk.keys()) - known):
+        if path not in listed:
+            status = "unexpected"
+        elif path in on_disk:
+            status = "present"
+        else:
+            status = "missing"
+        stem = PurePosixPath(path).stem
+        track_id = int(stem) if stem.isdigit() else ""
+        values = (track_id, path, status, on_disk.get(path, ""), listed.get(path, ""))
+        rows.append(dict(zip(INVENTORY_FIELDS, values, strict=True)))
+    output = data_dir / "manifests" / "fma_full_inventory.csv"
+    output.parent.mkdir(parents=True, exist_ok=True)
+    part = output.with_name(output.name + ".part")
+    with part.open("w", newline="") as file:
+        writer = csv.DictWriter(file, fieldnames=INVENTORY_FIELDS, lineterminator="\n")
+        writer.writeheader()
+        writer.writerows(rows)
+    part.replace(output)
+
+    counts = collections.Counter(row["status"] for row in rows)
+    summary = {
+        "inventory": output.relative_to(data_dir).as_posix(),
+        "listed_tracks": len(listed),
+        "present": counts["present"],
+        "missing": counts["missing"],
+        "unexpected": counts["unexpected"],
+        "present_gib": round(sum(on_disk[p] for p in listed.keys() & on_disk.keys()) / GIB, 2),
+        "unexpected_paths": [row["audio_path"] for row in rows if row["status"] == "unexpected"],
+    }
+    report_dir.mkdir(parents=True, exist_ok=True)
+    (report_dir / "fma_full_inventory.json").write_text(json.dumps(summary, indent=2))
+    return summary

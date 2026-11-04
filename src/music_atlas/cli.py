@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 
 from music_atlas.audio import analyze
-from music_atlas.fma import ARCHIVES, FMA_URL, download, probe
+from music_atlas.fma import ARCHIVES, FMA_URL, download, inventory, probe
 from music_atlas.settings import paths, profile
 
 
@@ -31,6 +31,9 @@ def main():
     fma_download.add_argument("archive", nargs="?", choices=ARCHIVES, default="fma_full")
     fma_download.add_argument("--limit", type=int, default=0, help="First N members; 0 is all.")
     fma_download.add_argument("--workers", type=int, default=4)
+    commands.add_parser(
+        "fma-inventory", help="List FMA-full tracks against the audio in ATLAS_DATA_DIR/fma."
+    )
     args = parser.parse_args()
     if args.command == "doctor":
         result = {"paths": paths(), "profile": profile(args.profile)}
@@ -46,6 +49,11 @@ def main():
                 )
         except (OSError, ValueError) as error:
             parser.exit(1, f"Cannot read {url}: {error}\n")
+    elif args.command == "fma-inventory":
+        try:
+            result = inventory(paths()["data"], paths()["outputs"])
+        except OSError as error:
+            parser.exit(1, f"{error}\n")
     elif args.command == "demo":
         args.output.parent.mkdir(parents=True, exist_ok=True)
         t = np.arange(3 * 22050) / 22050

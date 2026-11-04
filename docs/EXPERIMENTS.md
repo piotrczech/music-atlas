@@ -16,6 +16,11 @@ validation data, then freeze them before the final test evaluation.
 
 ## Shared formats
 
+`data/manifests/fma_full_inventory.csv` is the input to the audit and the manifest. It has
+one row per track in the published FMA-full checksum list, plus any unlisted file found on
+disk: `track_id`, `audio_path`, `status` (`present`, `missing` or `unexpected`),
+`size_bytes` and the published `sha1`.
+
 `data/manifests/tracks.parquet` contains `track_id`, `audio_path`, `artist_id`,
 `album_id`, `genre_ids`, `split`, `duplicate_group`, `duration_seconds`, `valid`
 and `error`. Paths are relative to the data directory; `genre_ids` is a list.

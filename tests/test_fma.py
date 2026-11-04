@@ -1,4 +1,5 @@
 import contextlib
+import csv
 import hashlib
 import io
 import threading
@@ -97,3 +98,29 @@ def test_download_keeps_only_verified_members_and_resumes(tmp_path, monkeypatch)
     assert not list(tmp_path.rglob("*.part"))
     assert (second["downloaded"], second["skipped_existing"], second["failed"]) == (0, 3, 2)
     assert (reports / "fma_full_download.json").exists()
+
+
+def test_inventory_links_listed_tracks_and_flags_unlisted_files(tmp_path):
+    archive = tmp_path / "fma" / "fma_full"
+    (archive / "000").mkdir(parents=True)
+    (archive / "checksums").write_text("".join(f"{s}  {p}\n" for p, s in CHECKSUMS.items()))
+    (archive / "README.txt").write_text("readme")
+    (archive / "000/000002.mp3").write_bytes(AUDIO["fma_full/000/000002.mp3"])
+    (archive / "000/000099.mp3.part").write_bytes(b"interrupted")
+
+    summary = fma.inventory(tmp_path, tmp_path / "outputs")
+
+    assert (summary["present"], summary["missing"], summary["unexpected"]) == (1, 2, 1)
+    assert summary["unexpected_paths"] == ["fma/fma_full/000/000099.mp3.part"]
+    output = tmp_path / summary["inventory"]
+    assert b"\r" not in output.read_bytes()
+    with output.open(newline="") as file:
+        rows = list(csv.DictReader(file))
+    assert [(r["track_id"], r["status"], r["size_bytes"]) for r in rows] == [
+        ("2", "present", "503"),
+        ("3", "missing", ""),
+        ("5", "missing", ""),
+        ("", "unexpected", "11"),
+    ]
+    assert rows[0]["audio_path"] == "fma/fma_full/000/000002.mp3"
+    assert rows[0]["sha1"] == CHECKSUMS["000/000002.mp3"]
