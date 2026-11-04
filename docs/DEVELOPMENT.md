@@ -79,9 +79,23 @@ Compute jobs use `--frozen --no-sync` with the prepared environment. Confirm the
 type, driver stack and compatible PyTorch build before configuring training jobs;
 the `training` extra is not a cluster-specific GPU installation profile.
 
-The FMA-full archive is approximately 879 GiB. Allow for both download and extraction
-within the storage quota, remove the archive after verified extraction when appropriate,
-and retain compressed source audio. Bound spectrogram caches and use sharded outputs.
+The FMA-full archive is approximately 879 GiB. `uv run atlas fma-probe` reads only its
+central directory and checksum list through HTTP Range requests and writes
+`fma_full_probe.json` to the outputs directory. Measured on 2026-11-04, the archive holds
+106,574 bzip2-compressed MP3s that extract to 930 GiB, so storing the archive during a full
+extraction would need 1,809 GiB (1.94 TB) of the 2 TB allocation.
+
+`uv run atlas fma-download` therefore never stores the archive. It fetches each member with
+one Range request, decompresses it, and renames it into `$ATLAS_DATA_DIR/fma/fma_full/` only
+after its SHA-1 matches the archive's `checksums` list and its CRC-32 matches the ZIP index;
+the published SHA-1 of the whole ZIP is not checked. Run `uv run atlas fma-download
+fma_metadata` for the metadata. An interrupted run resumes by skipping verified files.
+Failures are listed in `<archive>_download.json` in the outputs directory, and the command
+exits non-zero until a rerun clears them. Start with `--limit 200` to measure throughput,
+then choose `--workers`. The download needs internet access, so confirm which WCSS node
+may run a multi-hour transfer before starting it.
+
+Retain the compressed source audio. Bound spectrogram caches and use sharded outputs.
 Job-local `TMPDIR` is temporary and must not hold the only copy of results.
 
 WCSS references: [home storage](https://man.e-science.pl/i/150),
