@@ -27,9 +27,15 @@ sample rate, window selection, aggregation and normalisation. Export fitted scal
 and class mappings alongside the model. Query processing uses the same settings.
 
 The initial full profile samples three deterministic 10-second windows per track,
-covering its beginning, middle and end; the quick profile samples one window.
-Define the short-track policy in the shared loader and use the same windows across
-methods. Full catalogue coverage does not imply processing every second of each track.
+covering its beginning, middle and end; the quick profile samples one centred window.
+`music_atlas.loader` applies this policy for every method. Windows are placed in the
+file's native frames, so encoders that need another sample rate receive the same time
+spans. Windows overlap when a track is shorter than three windows; a track no longer
+than one window yields one window from its start, zero-padded to the window length.
+Audio is mixed to mono, and each window records its actual start and end. When a file
+decodes to less audio than its header states, as truncated MP3s do, the windows are
+placed within the decoded audio. Full catalogue coverage does not imply processing
+every second of each track.
 
 ## Comparisons
 
