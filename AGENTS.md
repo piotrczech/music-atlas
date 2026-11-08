@@ -20,5 +20,6 @@ and the existing implementation before editing. Project documentation is in Engl
   `npm run typecheck` and `npm run build` in `web/`.
 
 Optional skills are stored in `.agents/skills/`: `ponytail` for implementation and review,
-`frontend-design` for interface work, and `uv-package-manager` for Python environments.
-Their upstream revisions are recorded in `.agents/skills.lock.json`.
+`frontend-design` for interface work, `uv-package-manager` for Python environments, and
+`wcss-slurm` for WCSS jobs and storage. Their upstream revisions are recorded in
+`.agents/skills.lock.json`.
