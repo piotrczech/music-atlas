@@ -14,6 +14,9 @@ and the existing implementation before editing. Project documentation is in Engl
   Fit preprocessing on train; keep artists, duplicates and fragments within one split.
 - Store audio, caches, models and generated outputs outside Git. Resolve storage through
   `ATLAS_*` paths. Local and WCSS runs use the same code with different profiles.
+- WCSS storage is Lustre: keep few large files there. FMA-full lives as verified tar shards
+  (`docs/DEVELOPMENT.md`); read tracks from the shards, unpack only to node-local storage
+  and write sharded outputs. Run downloads and preprocessing as CPU jobs, not on GPUs.
 - Keep unavailable models explicit in API responses and UI. Distinguish measured results
   from examples and exploratory visualisations.
 - For code changes, run Ruff and relevant Python tests; for frontend changes, run
@@ -22,4 +25,5 @@ and the existing implementation before editing. Project documentation is in Engl
 Optional skills are stored in `.agents/skills/`: `ponytail` for implementation and review,
 `frontend-design` for interface work, `uv-package-manager` for Python environments, and
 `wcss-slurm` for WCSS jobs and storage. Their upstream revisions are recorded in
-`.agents/skills.lock.json`.
+`.agents/skills.lock.json`. Read `wcss-slurm` before any WCSS work (jobs, storage,
+transfers, quotas or access); generic SLURM advice is often wrong there.
