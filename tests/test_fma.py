@@ -1,12 +1,15 @@
 import csv
 import hashlib
 import io
+import sys
 import tarfile
 import threading
 import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from music_atlas import fma
+import pytest
+
+from music_atlas import cli, fma
 
 AUDIO = {"000/000002.mp3": b"ID3" + bytes(500), "000/000003.mp3": b"", "001/001000.mp3": b"ID3"}
 CHECKSUMS = {path: hashlib.sha1(data).hexdigest() for path, data in AUDIO.items()}
@@ -93,3 +96,13 @@ def test_download_packs_verified_shards_writes_inventory_and_resumes(tmp_path, m
     ]
     assert (second["complete"], list(second["failed"])) == (1, ["001"])
     assert shard.stat().st_mtime_ns == built
+
+
+def test_full_download_with_missing_tracks_exits_non_zero(monkeypatch, capsys):
+    monkeypatch.setattr(cli, "download", lambda *args: {"tracks_missing": 1, "failed": {}})
+    monkeypatch.setattr(sys, "argv", ["atlas", "fma-download"])
+    with pytest.raises(SystemExit) as exit_:
+        cli.main()
+    assert exit_.value.code == 1
+    monkeypatch.setattr(sys, "argv", ["atlas", "fma-download", "--limit", "2"])
+    cli.main()  # a pilot leaves tracks missing by design

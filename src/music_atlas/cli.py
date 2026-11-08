@@ -45,5 +45,7 @@ def main():
         except (ValueError, OSError) as error:
             parser.exit(1, f"{error}\n")
     print(json.dumps(result, indent=2, default=str))
-    if result.get("failed"):  # lets the SLURM script retry failed shards
+    # Lets the SLURM script retry failed shards. Missing tracks also fail a full run, since
+    # every shard can succeed while the catalogue stays incomplete; a --limit pilot cannot.
+    if result.get("failed") or (result.get("tracks_missing") and not args.limit):
         parser.exit(1)
