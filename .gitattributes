@@ -1,0 +1,3 @@
+# SLURM rejects job scripts with CRLF line endings, so keep shell scripts LF on Windows too.
+*.sh text eol=lf
+*.sbatch text eol=lf

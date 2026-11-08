@@ -16,9 +16,12 @@ validation data, then freeze them before the final test evaluation.
 
 ## Shared formats
 
-`data/manifests/tracks.parquet` contains `track_id`, `audio_path`, `artist_id`,
+`data/manifests/fma_full_inventory.csv` lists each published FMA-full track with `track_id`,
+`shard`, `audio_path`, `size_bytes`, `sha1` and `status` (`present` or `missing`).
+`data/manifests/tracks.parquet` contains `track_id`, `shard`, `audio_path`, `artist_id`,
 `album_id`, `genre_ids`, `split`, `duplicate_group`, `duration_seconds`, `valid`
-and `error`. Paths are relative to the data directory; `genre_ids` is a list.
+and `error`. `shard` is a tar relative to the data directory and `audio_path` the file
+inside it; `genre_ids` is a list.
 
 Representations are stored under `artifacts/<representation>/<run_id>/` as
 `vectors.npy` with shape `(n_tracks, d)`, aligned `track_ids.npy` and `metadata.json`.

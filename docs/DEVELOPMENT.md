@@ -79,9 +79,14 @@ Compute jobs use `--frozen --no-sync` with the prepared environment. Confirm the
 type, driver stack and compatible PyTorch build before configuring training jobs;
 the `training` extra is not a cluster-specific GPU installation profile.
 
-The FMA-full archive is approximately 879 GiB. Allow for both download and extraction
-within the storage quota, remove the archive after verified extraction when appropriate,
-and retain compressed source audio. Bound spectrogram caches and use sharded outputs.
+The FMA-full archive is approximately 879 GiB. `scripts/slurm/fma-download.sbatch` runs
+`atlas fma-download`, which streams it without storing the archive and writes one verified
+tar of source MP3s per FMA folder (156 shards, up to 11 GiB, 930 GiB of the 2,000 GiB
+quota), then the inventory. Its summary lists archived files absent from `checksums` as
+`unexpected`. Reruns skip finished shards; `--probe` reports sizes and `--limit 2` runs a
+pilot. Lustre suits few large files, so jobs read MP3s straight from the shards; Bem2's
+`TMPDIR` is Lustre too, so unpack only to node-local storage such as Lem's NVMe.
+Bound spectrogram caches and use sharded outputs.
 Job-local `TMPDIR` is temporary and must not hold the only copy of results.
 
 WCSS references: [home storage](https://man.e-science.pl/i/150),

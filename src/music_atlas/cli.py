@@ -6,6 +6,7 @@ from pathlib import Path
 import numpy as np
 
 from music_atlas.audio import analyze
+from music_atlas.fma import download
 from music_atlas.settings import paths, profile
 
 
@@ -18,9 +19,18 @@ def main():
     inspect.add_argument("input", type=Path)
     demo = commands.add_parser("demo", help="Generate a synthetic signal, not a music example.")
     demo.add_argument("--output", type=Path, default=Path("outputs/demo.wav"))
+    fma = commands.add_parser("fma-download", help="Download FMA into verified tar shards.")
+    fma.add_argument("--probe", action="store_true", help="Only report sizes and shard counts.")
+    fma.add_argument("--limit", type=int, default=0, help="Download at most N shards.")
+    fma.add_argument("--workers", type=int, default=4)
     args = parser.parse_args()
     if args.command == "doctor":
         result = {"paths": paths(), "profile": profile(args.profile)}
+    elif args.command == "fma-download":
+        try:
+            result = download(paths()["data"], args.probe, args.limit, args.workers)
+        except (OSError, ValueError) as error:
+            parser.exit(1, f"{error}\n")
     elif args.command == "demo":
         args.output.parent.mkdir(parents=True, exist_ok=True)
         t = np.arange(3 * 22050) / 22050
@@ -35,3 +45,7 @@ def main():
         except (ValueError, OSError) as error:
             parser.exit(1, f"{error}\n")
     print(json.dumps(result, indent=2, default=str))
+    # Lets the SLURM script retry failed shards. Missing tracks also fail a full run, since
+    # every shard can succeed while the catalogue stays incomplete; a --limit pilot cannot.
+    if result.get("failed") or (result.get("tracks_missing") and not args.limit):
+        parser.exit(1)

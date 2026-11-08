@@ -16,5 +16,11 @@
     "repository": "https://github.com/wshobson/agents",
     "revision": "0874a27b17a22e2b7c2e2bcd725768e0803cad06",
     "path": "plugins/python-development/skills/uv-package-manager"
+  },
+  {
+    "name": "wcss-slurm",
+    "repository": "https://github.com/dawidlinek/slurm-wcss-skill",
+    "revision": "eea9919e4f4ee9206722652a35b48c98a7c44d88",
+    "path": "."
   }
 ]
