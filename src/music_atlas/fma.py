@@ -1,36 +1,31 @@
-"""Access to the published FMA archives."""
+"""Download FMA into verified tar shards on project storage."""
 
-import collections
 import csv
 import hashlib
 import io
-import json
-import struct
+import re
+import shutil
 import sys
+import tarfile
 import time
-import urllib.parse
-import urllib.request
 import zipfile
+from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
-from pathlib import Path, PurePosixPath
+from pathlib import Path
+from urllib.request import Request, urlopen
 
 FMA_URL = "https://os.unil.cloud.switch.ch/fma/{}.zip"
-ARCHIVES = ("fma_full", "fma_metadata")
-BLOCK = 1 << 20
-COMPRESSION = {0: "stored", 8: "deflate", 12: "bzip2", 14: "lzma"}
+AUDIO = re.compile(r"fma_full/(\d{3})/(\d{6})\.mp3")
+BLOCK = 16 << 20
 GIB = 2**30
-INVENTORY_FIELDS = ("track_id", "audio_path", "status", "size_bytes", "sha1")
 
 
 class HTTPRangeFile(io.RawIOBase):
-    """Seekable read-only view of a remote file, fetched in 1 MiB blocks with Range requests."""
+    """Seekable read-only view of a remote file; each read is one Range request."""
 
     def __init__(self, url: str):
-        self.url = url
-        self.pos = 0
-        self.requests = 0
-        self.cache: dict[int, bytes] = {}
-        with urllib.request.urlopen(urllib.request.Request(url, method="HEAD"), timeout=60) as r:
+        self.url, self.pos = url, 0
+        with urlopen(Request(url, method="HEAD"), timeout=60) as r:
             self.size = int(r.headers["Content-Length"])
 
     def readable(self):
@@ -39,261 +34,134 @@ class HTTPRangeFile(io.RawIOBase):
     def seekable(self):
         return True
 
-    def tell(self):
-        return self.pos
-
     def seek(self, offset, whence=io.SEEK_SET):
-        base = {io.SEEK_SET: 0, io.SEEK_CUR: self.pos, io.SEEK_END: self.size}[whence]
-        self.pos = max(0, base + offset)
+        self.pos = max(0, offset + (0, self.pos, self.size)[whence])
         return self.pos
-
-    def _block(self, index: int) -> bytes:
-        if index not in self.cache:
-            start = index * BLOCK
-            end = min(start + BLOCK, self.size) - 1
-            request = urllib.request.Request(self.url, headers={"Range": f"bytes={start}-{end}"})
-            with urllib.request.urlopen(request, timeout=120) as r:
-                # A 200 reply would stream the whole archive; stop before reading it.
-                if r.status != 206:
-                    raise OSError(f"Server ignored the Range header (HTTP {r.status}).")
-                self.cache[index] = r.read()
-            self.requests += 1
-            if len(self.cache) > 64:
-                self.cache.pop(next(iter(self.cache)))
-        return self.cache[index]
 
     def readinto(self, buffer):
-        view = memoryview(buffer).cast("B")
-        filled = 0
-        while filled < len(view) and self.pos < self.size:
-            index, offset = divmod(self.pos, BLOCK)
-            chunk = self._block(index)[offset : offset + len(view) - filled]
-            view[filled : filled + len(chunk)] = chunk
-            filled += len(chunk)
-            self.pos += len(chunk)
-        return filled
+        end = min(self.pos + len(buffer), self.size)
+        if self.pos >= end:
+            return 0
+        request = Request(self.url, headers={"Range": f"bytes={self.pos}-{end - 1}"})
+        with urlopen(request, timeout=120) as r:
+            # A 200 reply would stream the whole archive; stop before reading it.
+            if r.status != 206:
+                raise OSError(f"Server ignored the Range header (HTTP {r.status}).")
+            count = r.readinto(buffer)
+        self.pos += count
+        return count
 
 
-def archive_name(url: str) -> str:
-    return PurePosixPath(urllib.parse.urlparse(url).path).stem
+def open_remote(url: str) -> io.BufferedReader:
+    # Members are read in archive order, so a 16 MiB buffer keeps Range requests few.
+    return io.BufferedReader(HTTPRangeFile(url), BLOCK)
 
 
-def parse_checksums(listing: bytes, root: PurePosixPath) -> dict[str, str]:
-    """Map each path in a `sha1sum` listing, prefixed with `root`, to its SHA-1."""
-    listed = {}
-    for line in listing.decode().splitlines():
-        if line.strip():
-            sha1, path = line.split(maxsplit=1)
-            listed[str(root / path.lstrip("*"))] = sha1
-    return listed
+def parse_checksums(text: str) -> dict[str, str]:
+    lines = (line.split(maxsplit=1) for line in text.splitlines() if line.strip())
+    return {path.lstrip("*"): sha1 for sha1, path in lines}
 
 
-def read_index(url: str) -> tuple[HTTPRangeFile, list[zipfile.ZipInfo], dict[str, str], bytes]:
-    """Read a remote archive's members and its `checksums` file as {member name: SHA-1}."""
-    remote = HTTPRangeFile(url)
-    with zipfile.ZipFile(remote) as archive:
-        files = [m for m in archive.infolist() if not m.is_dir()]
-        checksums = next((m for m in files if PurePosixPath(m.filename).name == "checksums"), None)
-        listing = archive.read(checksums) if checksums else b""
-    # Checksum paths are relative to the directory holding the checksum file.
-    root = PurePosixPath(checksums.filename).parent if checksums else PurePosixPath()
-    return remote, files, parse_checksums(listing, root), listing
+def fetch_metadata(fma_dir: Path) -> None:
+    """Extract and verify the metadata; the folder gets its final name only when complete."""
+    target, part = fma_dir / "fma_metadata", fma_dir / "fma_metadata.part"
+    if target.exists():
+        return
+    shutil.rmtree(part, ignore_errors=True)
+    with zipfile.ZipFile(open_remote(FMA_URL.format("fma_metadata"))) as archive:
+        archive.extractall(part)
+    folder = part / "fma_metadata"
+    for name, sha1 in parse_checksums((folder / "checksums").read_text()).items():
+        with (folder / name).open("rb") as file:
+            if hashlib.file_digest(file, "sha1").hexdigest() != sha1:
+                raise ValueError(f"SHA-1 mismatch for fma_metadata/{name}")
+    folder.replace(target)
+    part.rmdir()
 
 
-def probe(url: str, output_dir: Path) -> dict:
-    """Plan disk use from a remote archive's central directory, without downloading audio.
-
-    Writes `<archive>_probe.json` and the archive's own checksum list to `output_dir`.
-    """
-    remote, files, listed, listing = read_index(url)
-    names = {m.filename for m in files}
-    extracted = sum(m.file_size for m in files)
-    both = remote.size + extracted
-    summary = {
-        "url": url,
-        "files": len(files),
-        "extensions": dict(
-            collections.Counter(PurePosixPath(m.filename).suffix.lower() or "(none)" for m in files)
-        ),
-        "compression_methods": dict(
-            collections.Counter(COMPRESSION.get(m.compress_type, m.compress_type) for m in files)
-        ),
-        "top_level": sorted({m.filename.split("/")[0] for m in files}),
-        "examples": [m.filename for m in files[:5]],
-        "archive_bytes": remote.size,
-        "extracted_bytes": extracted,
-        "archive_gib": round(remote.size / GIB, 2),
-        "extracted_gib": round(extracted / GIB, 2),
-        "archive_and_extracted_gib": round(both / GIB, 2),
-        "empty_files": sum(m.file_size == 0 for m in files),
-        "largest_file_mib": round(max((m.file_size for m in files), default=0) / 2**20, 1),
-        "checksum_entries": len(listed),
-        "missing_from_archive": sorted(listed.keys() - names),
-        "unlisted_in_checksums": sorted(names - listed.keys()),
-        "range_requests": remote.requests,
-    }
-
-    output_dir.mkdir(parents=True, exist_ok=True)
-    # Bytes, not text: keeps the LF endings `sha1sum -c` expects when written on Windows.
-    (output_dir / f"{archive_name(url)}_checksums.txt").write_bytes(listing)
-    (output_dir / f"{archive_name(url)}_probe.json").write_text(
-        json.dumps(summary, indent=2) + "\n"
-    )
-    return summary
-
-
-def fetch_member(url: str, info: zipfile.ZipInfo, end: int, root: Path, sha1: str | None) -> bool:
-    """Write one member under `root` unless it is already there; return whether it was fetched."""
-    target = root.joinpath(info.filename)
-    # Lexical on purpose: resolve() races with other workers creating the same directory.
-    if ".." in Path(info.filename).parts or not target.is_relative_to(root):
-        raise ValueError("Member path leaves the destination directory.")
-    # Files reach their final name only after verification, so a matching size means done.
-    if target.is_file() and target.stat().st_size == info.file_size:
-        return False
-    target.parent.mkdir(parents=True, exist_ok=True)
+def write_shard(url: str, members: list[str], sha1s: dict[str, str], target: Path) -> None:
+    """Pack one archive folder into a tar that gets its final name only if every file verifies."""
     part = target.with_name(target.name + ".part")
-    digest = hashlib.sha1()
-    request = urllib.request.Request(url, headers={"Range": f"bytes={info.header_offset}-{end}"})
     try:
-        with urllib.request.urlopen(request, timeout=120) as response, part.open("wb") as out:
-            if response.status != 206:
-                raise OSError(f"Server ignored the Range header (HTTP {response.status}).")
-            header = response.read(zipfile.sizeFileHeader)
-            if len(header) < zipfile.sizeFileHeader or header[:4] != b"PK\x03\x04":
-                raise zipfile.BadZipFile("Missing local file header.")
-            response.read(sum(struct.unpack("<2H", header[26:])))  # file name and extra field
-            # ZipExtFile is undocumented but stable; it decompresses and checks the CRC-32.
-            with zipfile.ZipExtFile(response, "r", info) as member:
-                while chunk := member.read(BLOCK):
-                    digest.update(chunk)
-                    out.write(chunk)
-        if sha1 and digest.hexdigest() != sha1:
-            raise ValueError("SHA-1 does not match the published checksum.")
+        with zipfile.ZipFile(open_remote(url)) as archive, tarfile.open(part, "w") as tar:
+            for name in members:
+                data = archive.read(name)  # zipfile checks the CRC-32
+                if hashlib.sha1(data).hexdigest() != sha1s[name]:
+                    raise ValueError(f"SHA-1 mismatch for {name}")
+                entry = tarfile.TarInfo(name.removeprefix("fma_full/"))
+                entry.size = len(data)
+                tar.addfile(entry, io.BytesIO(data))
     except BaseException:
         part.unlink(missing_ok=True)
         raise
     part.replace(target)
-    return True
 
 
-def download(url: str, dest: Path, report_dir: Path, limit: int = 0, workers: int = 4) -> dict:
-    """Stream archive members into `dest` one Range request each, keeping verified files only.
+def download(data_dir: Path, probe: bool = False, limit: int = 0, workers: int = 4) -> dict:
+    """Fetch the metadata and one tar per FMA-full folder, then write the inventory."""
+    fma_dir, url = data_dir / "fma", FMA_URL.format("fma_full")
+    remote = open_remote(url)
+    with zipfile.ZipFile(remote) as archive:
+        listing = parse_checksums(archive.read("fma_full/checksums").decode())
+        sizes = {info.filename: info.file_size for info in archive.infolist()}
+    sha1s = {f"fma_full/{path}": sha1 for path, sha1 in listing.items()}
+    # Unlisted files cannot be verified, so they are reported and not packed.
+    unexpected = sorted(name for name in sizes if AUDIO.fullmatch(name) and name not in sha1s)
+    shards = defaultdict(list)
+    for name in sha1s:
+        if (match := AUDIO.fullmatch(name)) and name in sizes:
+            shards[match[1]].append(name)
+    shard_bytes = {key: sum(sizes[name] for name in names) for key, names in shards.items()}
+    todo = [key for key in sorted(shards) if not (fma_dir / f"fma_full/{key}.tar").exists()]
+    todo = todo[: limit or None]
+    if probe:
+        return {
+            "archive_gib": round(remote.raw.size / GIB, 1),
+            "audio_gib": round(sum(shard_bytes.values()) / GIB, 1),
+            "shards": len(shards),
+            "largest_shard_gib": round(max(shard_bytes.values()) / GIB, 1),
+            "shards_to_download": len(todo),
+            "unexpected": unexpected,
+        }
 
-    The archive itself is never stored. A rerun skips completed members and retries failures;
-    `limit` takes the first members in archive order for a throughput pilot.
-    """
-    remote, files, listed, _ = read_index(url)
-    files.sort(key=lambda m: m.header_offset)
-    # A member's bytes end where the next one starts; the last one ends before the index.
-    ends = [m.header_offset - 1 for m in files[1:]] + [remote.size - 1]
-    selected = list(zip(files, ends, strict=True))[: limit or None]
-    dest.mkdir(parents=True, exist_ok=True)
-    root = dest.resolve()
+    fetch_metadata(fma_dir)
+    (fma_dir / "fma_full").mkdir(parents=True, exist_ok=True)
 
-    def fetch(item):
-        info, end = item
+    def run(key: str) -> str | None:
+        started = time.monotonic()
         try:
-            return fetch_member(url, info, end, root, listed.get(info.filename)), None
-        except Exception as error:  # record the member and continue; a rerun retries it
-            return False, f"{type(error).__name__}: {error}"
+            write_shard(url, shards[key], sha1s, fma_dir / f"fma_full/{key}.tar")
+        except Exception as error:  # report the shard and continue; a rerun retries it
+            return f"{type(error).__name__}: {error}"
+        seconds = time.monotonic() - started
+        print(f"{key}.tar {shard_bytes[key] / GIB:.1f} GiB in {seconds:.0f} s", file=sys.stderr)
 
-    started = time.monotonic()
-    downloaded = skipped = downloaded_bytes = 0
-    failures = []
     pool = ThreadPoolExecutor(workers)
     try:
-        results = zip(selected, pool.map(fetch, selected), strict=True)
-        for done, ((info, _), (fetched, error)) in enumerate(results, 1):
-            if error:
-                failures.append({"path": info.filename, "error": error})
-            elif fetched:
-                downloaded += 1
-                downloaded_bytes += info.file_size
-            else:
-                skipped += 1
-            if done % 1000 == 0:
-                rate = downloaded_bytes / 2**20 / (time.monotonic() - started)
-                print(
-                    f"{done}/{len(selected)} members, {downloaded_bytes / GIB:.1f} GiB new, "
-                    f"{rate:.1f} MiB/s, {len(failures)} failed",
-                    file=sys.stderr,
-                    flush=True,
-                )
+        errors = dict(zip(todo, pool.map(run, todo), strict=True))
     finally:
-        # Without cancel_futures, Ctrl+C would wait for every queued member.
-        pool.shutdown(cancel_futures=True)
+        pool.shutdown(cancel_futures=True)  # Ctrl+C would otherwise wait for every queued shard
 
-    elapsed = time.monotonic() - started
-    report = {
-        "url": url,
-        "selected_members": len(selected),
-        "downloaded": downloaded,
-        "skipped_existing": skipped,
-        "failed": len(failures),
-        "downloaded_gib": round(downloaded_bytes / GIB, 3),
-        "elapsed_seconds": round(elapsed, 1),
-        "mib_per_second": round(downloaded_bytes / 2**20 / max(elapsed, 1e-6), 1),
-        "workers": workers,
-        "unverified": sorted(m.filename for m, _ in selected if m.filename not in listed),
-        "missing_from_archive": sorted(listed.keys() - {m.filename for m in files}),
-        "failures": failures,
-    }
-    report_dir.mkdir(parents=True, exist_ok=True)
-    (report_dir / f"{archive_name(url)}_download.json").write_text(json.dumps(report, indent=2))
-    return report
-
-
-def inventory(data_dir: Path, report_dir: Path) -> dict:
-    """Link every track in `fma_full/checksums` to its audio file and flag unlisted files.
-
-    Writes `manifests/fma_full_inventory.csv` with paths relative to `data_dir`. Files reach
-    their final name only after `download` verifies them, so this only lists them;
-    `sha1sum -c checksums` in the archive directory re-verifies their content.
-    """
-    archive = PurePosixPath("fma", "fma_full")
-    checksums = data_dir / archive / "checksums"
-    if not checksums.is_file():
-        raise OSError(f"{checksums} not found; run `atlas fma-download` first.")
-    listed = parse_checksums(checksums.read_bytes(), archive)
-    on_disk = {}
-    for folder, _, names in (data_dir / archive).walk():
-        for name in names:
-            path = folder / name
-            on_disk[path.relative_to(data_dir).as_posix()] = path.stat().st_size
-    known = {str(archive / "README.txt"), str(archive / "checksums")}
-
+    done = {key for key in shards if (fma_dir / f"fma_full/{key}.tar").exists()}
     rows = []
-    for path in sorted((listed.keys() | on_disk.keys()) - known):
-        if path not in listed:
-            status = "unexpected"
-        elif path in on_disk:
-            status = "present"
-        else:
-            status = "missing"
-        stem = PurePosixPath(path).stem
-        track_id = int(stem) if stem.isdigit() else ""
-        values = (track_id, path, status, on_disk.get(path, ""), listed.get(path, ""))
-        rows.append(dict(zip(INVENTORY_FIELDS, values, strict=True)))
-    output = data_dir / "manifests" / "fma_full_inventory.csv"
-    output.parent.mkdir(parents=True, exist_ok=True)
-    part = output.with_name(output.name + ".part")
-    with part.open("w", newline="") as file:
-        writer = csv.DictWriter(file, fieldnames=INVENTORY_FIELDS, lineterminator="\n")
-        writer.writeheader()
+    for name, sha1 in sorted(sha1s.items()):
+        if match := AUDIO.fullmatch(name):
+            shard = f"fma/fma_full/{match[1]}.tar"
+            present = name in sizes and match[1] in done
+            row = (int(match[2]), shard, name.removeprefix("fma_full/"), sizes.get(name, ""), sha1)
+            rows.append((*row, "present" if present else "missing"))
+    inventory = data_dir / "manifests" / "fma_full_inventory.csv"
+    inventory.parent.mkdir(parents=True, exist_ok=True)
+    with inventory.open("w", newline="") as file:
+        writer = csv.writer(file, lineterminator="\n")
+        writer.writerow(("track_id", "shard", "audio_path", "size_bytes", "sha1", "status"))
         writer.writerows(rows)
-    part.replace(output)
-
-    counts = collections.Counter(row["status"] for row in rows)
-    summary = {
-        "inventory": output.relative_to(data_dir).as_posix(),
-        "listed_tracks": len(listed),
-        "present": counts["present"],
-        "missing": counts["missing"],
-        "unexpected": counts["unexpected"],
-        "present_gib": round(sum(on_disk[p] for p in listed.keys() & on_disk.keys()) / GIB, 2),
-        "unexpected_paths": [row["audio_path"] for row in rows if row["status"] == "unexpected"],
+    present = sum(row[-1] == "present" for row in rows)
+    return {
+        "shards": len(shards),
+        "complete": len(done),
+        "tracks_present": present,
+        "tracks_missing": len(rows) - present,
+        "unexpected": unexpected,
+        "failed": {key: error for key, error in errors.items() if error},
     }
-    report_dir.mkdir(parents=True, exist_ok=True)
-    (report_dir / "fma_full_inventory.json").write_text(json.dumps(summary, indent=2))
-    return summary

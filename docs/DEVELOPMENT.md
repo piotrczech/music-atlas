@@ -79,36 +79,14 @@ Compute jobs use `--frozen --no-sync` with the prepared environment. Confirm the
 type, driver stack and compatible PyTorch build before configuring training jobs;
 the `training` extra is not a cluster-specific GPU installation profile.
 
-The FMA-full archive is approximately 879 GiB. `uv run atlas fma-probe` reads only its
-central directory and checksum list through HTTP Range requests and writes
-`fma_full_probe.json` to the outputs directory. Measured on 2026-11-04, the archive holds
-106,574 bzip2-compressed MP3s that extract to 930 GiB. `PD-info` reports the project quota
-in binary units: `1.953T` is 2,000 GiB, shared by the team, with a separate limit of
-1,048,576 files. Storing the archive during a full extraction would need 1,809 GiB of it.
-
-`uv run atlas fma-download` therefore never stores the archive. It fetches each member with
-one Range request, decompresses it, and renames it into `$ATLAS_DATA_DIR/fma/fma_full/` only
-after its SHA-1 matches the archive's `checksums` list and its CRC-32 matches the ZIP index;
-the published SHA-1 of the whole ZIP is not checked. Run `uv run atlas fma-download
-fma_metadata` for the metadata. An interrupted run resumes by skipping verified files.
-Failures are listed in `<archive>_download.json` in the outputs directory, and the command
-exits non-zero until a rerun clears them. Start with `--limit 200` to measure throughput,
-then choose `--workers`. The download needs internet access, so confirm which WCSS node
-may run a multi-hour transfer before starting it.
-
-`uv run atlas fma-inventory` then lists every track in `fma_full/checksums` against the
-files on disk and writes `$ATLAS_DATA_DIR/manifests/fma_full_inventory.csv`, with a summary
-in `fma_full_inventory.json` in the outputs directory. It only lists files, so it is quick
-to rerun after each download pass; `sha1sum -c --quiet checksums` in `fma/fma_full/`
-re-verifies their content.
-
-FMA-full then occupies 930 GiB and about 107,000 files, leaving roughly 1,070 GiB and
-940,000 files for environments, caches and results. The file limit is the tighter one for
-derived data: one file per track or window for each representation would use 10–30% of it,
-so write sharded arrays. Check `PD-info` after the first `uv sync`, since each Python
-environment adds tens of thousands of files.
-
-Retain the compressed source audio. Bound spectrogram caches and use sharded outputs.
+The FMA-full archive is approximately 879 GiB. `scripts/slurm/fma-download.sbatch` runs
+`atlas fma-download`, which streams it without storing the archive and writes one verified
+tar of source MP3s per FMA folder (156 shards, up to 11 GiB, 930 GiB of the 2,000 GiB
+quota), then the inventory. Its summary lists archived files absent from `checksums` as
+`unexpected`. Reruns skip finished shards; `--probe` reports sizes and `--limit 2` runs a
+pilot. Lustre suits few large files, so jobs read MP3s straight from the shards; Bem2's
+`TMPDIR` is Lustre too, so unpack only to node-local storage such as Lem's NVMe.
+Bound spectrogram caches and use sharded outputs.
 Job-local `TMPDIR` is temporary and must not hold the only copy of results.
 
 WCSS references: [home storage](https://man.e-science.pl/i/150),
