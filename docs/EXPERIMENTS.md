@@ -27,9 +27,10 @@ sample rate, window selection, aggregation and normalisation. Export fitted scal
 and class mappings alongside the model. Query processing uses the same settings.
 
 The initial full profile samples three deterministic 10-second windows per track,
-covering its beginning, middle and end; the quick profile samples one window.
-Define the short-track policy in the shared loader and use the same windows across
-methods. Full catalogue coverage does not imply processing every second of each track.
+covering its beginning, middle and end; the quick profile samples one centred window.
+`music_atlas.loader` applies this to every method: windows overlap in short tracks, and a
+track shorter than one window gets a single zero-padded window. Full catalogue coverage
+does not imply processing every second of each track.
 
 ## Comparisons
 
