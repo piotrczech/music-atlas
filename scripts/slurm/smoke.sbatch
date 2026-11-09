@@ -15,6 +15,7 @@ export UV_CACHE_DIR="${UV_CACHE_DIR:-${ATLAS_ARTIFACTS_DIR}/uv-cache}"
 export HF_HOME="${HF_HOME:-${ATLAS_ARTIFACTS_DIR}/hf-cache}"
 export UV_PROJECT_ENVIRONMENT="${UV_PROJECT_ENVIRONMENT:-${ATLAS_ARTIFACTS_DIR}/venv-${USER}}"
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-2}"
+export PYTHONNOUSERSITE=1
 
 # Sync the environment before submitting; compute nodes may have no internet.
 uv run --frozen --no-sync atlas doctor --profile quick

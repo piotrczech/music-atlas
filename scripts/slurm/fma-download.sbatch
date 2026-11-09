@@ -16,6 +16,7 @@ cd "${SLURM_SUBMIT_DIR:?Submit from the repository root}"
 
 export UV_CACHE_DIR="${UV_CACHE_DIR:-${ATLAS_ARTIFACTS_DIR}/uv-cache}"
 export UV_PROJECT_ENVIRONMENT="${UV_PROJECT_ENVIRONMENT:-${ATLAS_ARTIFACTS_DIR}/venv-${USER}}"
+export PYTHONNOUSERSITE=1
 
 # Each pass skips finished shards, so a retry resumes rather than starts over.
 for pass in 1 2 3 4 5; do
