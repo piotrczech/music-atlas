@@ -88,7 +88,10 @@ The FMA-full archive is approximately 879 GiB. `scripts/slurm/fma-download.sbatc
 tar of source MP3s per FMA folder (156 shards, up to 11 GiB, 930 GiB of the 2,000 GiB
 quota), then the inventory. Its summary lists archived files absent from `checksums` as
 `unexpected`. Reruns skip finished shards; `--probe` reports sizes and `--limit 2` runs a
-pilot. Lustre suits few large files, so jobs read MP3s straight from the shards; Bem2's
+pilot. The November 2026 pilot on `bem2-cpu-short` fetched about 10.7 MiB/s per shard;
+the job downloads one shard per allocated core. SLURM's `MaxRSS` includes the page cache
+of the tars being written, so it reaches `--mem` without the job running out of memory.
+Lustre suits few large files, so jobs read MP3s straight from the shards; Bem2's
 `TMPDIR` is Lustre too, so unpack only to node-local storage such as Lem's NVMe.
 Bound spectrogram caches and use sharded outputs.
 Job-local `TMPDIR` is temporary and must not hold the only copy of results.
