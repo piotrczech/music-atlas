@@ -9,6 +9,10 @@ __pycache__/
 data/
 artifacts/
 outputs/
+# WCSS clones link these to project storage; `data/` does not match a symlink.
+/data
+/artifacts
+/outputs
 mlruns/
 *.db
 node_modules/

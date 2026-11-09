@@ -17,6 +17,10 @@ and the existing implementation before editing. Project documentation is in Engl
 - WCSS storage is Lustre: keep few large files there. FMA-full lives as verified tar shards
   (`docs/DEVELOPMENT.md`); read tracks from the shards, unpack only to node-local storage
   and write sharded outputs. Run downloads and preprocessing as CPU jobs, not on GPUs.
+- On WCSS the clone lives in `$HOME` and `~/.atlas-env.sh` (from
+  `scripts/slurm/atlas-env.example.sh`) points data, environments and the SLURM account
+  at the music service. Source it before any command; use OOD notebooks for inspection
+  only and bill nothing to another service.
 - Keep unavailable models explicit in API responses and UI. Distinguish measured results
   from examples and exploratory visualisations.
 - For code changes, run Ruff and relevant Python tests; for frontend changes, run
