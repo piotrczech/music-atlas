@@ -153,54 +153,6 @@ WCSS references: [home storage](https://man.e-science.pl/i/150),
 [project storage and symlinks](https://man.e-science.pl/i/218),
 [SLURM](https://man.e-science.pl/pl/kdm/slurm).
 
-### FMA metadata report
-
-Use the metadata and inventory already on PD. The CPU job reads CSV metadata and does
-not open any audio shards. Run these commands in the OOD shell from the repository root
-after configuring the music service as above.
-
-```bash
-source ~/.atlas-env.sh
-cd ~/music-atlas
-uv sync --locked --extra research --extra notebook
-bash .agents/skills/wcss-slurm/scripts/preflight.sh \
-  scripts/slurm/fma-metadata.sbatch --account="$ATLAS_ACCOUNT"
-```
-
-Once preflight passes, submit the report and check its state.
-
-```bash
-submission=$(sbatch --parsable --account="$ATLAS_ACCOUNT" \
-  scripts/slurm/fma-metadata.sbatch)
-job_id=${submission%%;*}
-sacct -j "$job_id" -o JobID,Account,State,Elapsed,MaxRSS
-printf 'Job ID: %s\n' "$job_id"
-```
-
-After `COMPLETED`, open `notebooks/fma_metadata.ipynb` in OOD, select **Music Atlas**
-and set `JOB_ID` to the printed ID. The report in
-`$ATLAS_OUTPUTS_DIR/fma-metadata-<job_id>/` contains five figures, the underlying
-tables, an interpretation and input hashes. The SLURM log is in `outputs/slurm-<job_id>.log`.
-
-Before the audio audit, the report uses every inventory row marked `present`.
-After the audit, pass the canonical manifest to the same job.
-
-```bash
-sbatch --parsable --account="$ATLAS_ACCOUNT" scripts/slurm/fma-metadata.sbatch \
-  --manifest "$ATLAS_DATA_DIR/manifests/tracks.parquet"
-```
-
-The manifest may be CSV or Parquet with unique `track_id` and Boolean `valid` columns.
-Only valid IDs present in the inventory enter the report. The summary counts rejected
-and unlisted present IDs separately. Both runs use the published durations so their
-distributions can be compared on the same basis.
-
-`genre_support.csv` contains the full taxonomy and counts each track once per genre.
-Inclusive counts add ancestor labels using `genres.csv`. Co-occurrence uses direct
-annotations. Concentration shares use the entire selected catalogue as the denominator,
-with missing IDs excluded from entity counts. Read the rare-class examples together with
-per-class artist support before fixing the scored labels in E1-05.
-
 ## Application and checks
 
 ```bash
