@@ -75,7 +75,11 @@ def record_filter(data_dir, artifacts_dir, version, representation, run_id, excl
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", value):
             raise ValueError(f"Invalid path component: {value!r}.")
 
-    directory = data_dir / "ready" / version
+    ready = (data_dir / "ready").resolve()
+    directory = (ready / version).resolve()
+    if directory.parent != ready:
+        raise ValueError(f"Split version must resolve within {ready}.")
+    version = directory.name
     manifest_path = directory / "tracks.parquet"
     report = json.loads((directory / "summary.json").read_text(encoding="utf-8"))
     manifest_hash = digest(manifest_path)

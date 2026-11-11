@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 import numpy as np
@@ -142,6 +143,9 @@ def test_pre_audit_and_audited_publication_are_distinct(tmp_path, catalogue_file
     assert excluded["split"] == table["split"][0].as_py()
     repeated = record_filter(tmp_path, artifacts, ready["version"], "mfcc", "pilot", exclusions)
     assert repeated == record
+    if os.name == "posix":
+        assert ready["short_version"] == "fma-v1"
+        assert record_filter(tmp_path, artifacts, "fma-v1", "mfcc", "pilot", exclusions) == record
     exclusions.write_text("track_id,error\n1,changed_reason\n", encoding="utf-8")
     with pytest.raises(ValueError, match="Existing view differs"):
         record_filter(tmp_path, artifacts, ready["version"], "mfcc", "pilot", exclusions)
@@ -160,6 +164,21 @@ def test_rerun_rejects_incomplete_or_changed_version(tmp_path, catalogue_files):
     (directory / "labels.json").write_text("[]", encoding="utf-8")
     with pytest.raises(ValueError, match=r"Missing or changed .*labels\.json"):
         build(tmp_path)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="Short version links are published on POSIX")
+def test_short_version_stays_pinned_to_original_inputs(tmp_path, catalogue_files):
+    first = build(tmp_path)
+    assert first["short_version"] == "pre-audit-v1"
+    alias = tmp_path / "ready" / first["short_version"]
+    tracks = tmp_path / "fma/fma_metadata/tracks.csv"
+    with tracks.open("a", encoding="utf-8") as stream:
+        stream.write("\n")
+
+    second = build(tmp_path)
+    assert second["version"] != first["version"]
+    assert second["short_version"] is None
+    assert alias.resolve() == Path(first["directory"]).resolve()
 
 
 def test_balanced_eval_preserves_splits_and_uses_independent_groups(tmp_path):

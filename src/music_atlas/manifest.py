@@ -390,7 +390,8 @@ def build(data_dir: Path, audit_path: Path | None = None, strategy: str = "propo
         recipe.update(strategy=strategy, rare_eval_target=RARE_EVAL_TARGET,
                       rare_eval_max_fraction=RARE_EVAL_MAX_FRACTION)
     identity = hashlib.sha256(json.dumps(recipe, sort_keys=True).encode()).hexdigest()
-    version = f"{prefix}-v{VERSION}-{identity[:16]}"
+    short_version = f"{prefix}-v{VERSION}"
+    version = f"{short_version}-{identity[:16]}"
 
     inventory = pd.read_csv(sources["inventory"], index_col="track_id", dtype={"sha1": "string"})
     genres = pd.read_csv(sources["genres"], index_col="genre_id")
@@ -418,4 +419,16 @@ def build(data_dir: Path, audit_path: Path | None = None, strategy: str = "propo
             copy = Path(temp) / canonical.name
             shutil.copyfile(destination / "tracks.parquet", copy)
             os.replace(copy, canonical)
-    return {**summary, "directory": str(destination), "balanced_eval_quota": balanced_quota}
+
+    # Keep an existing short name pinned to its original dataset.
+    alias = destination.with_name(short_version)
+    if os.name == "posix":
+        try:
+            alias.symlink_to(destination.name, target_is_directory=True)
+        except FileExistsError:
+            pass
+    has_alias = alias.is_symlink() and alias.readlink() == Path(version)
+    return {
+        **summary, "directory": str(destination), "balanced_eval_quota": balanced_quota,
+        "short_version": short_version if has_alias else None,
+    }

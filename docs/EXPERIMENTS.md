@@ -53,8 +53,9 @@ audio and a nullable `duplicate_group` for confirmed duplicates. Keep re-encodin
 candidates out of the confirmed group column.
 
 The job compares the published split, random assignment of groups and proportionate
-assignment of groups. Open `notebooks/fma_splits.ipynb` in OOD with the **Music Atlas**
-kernel to inspect the version, class counts and baselines. The E1-04 follow-up compares
+assignment of groups. The saved tables in `notebooks/fma_splits.ipynb` show the results
+on GitHub. To rerun the analysis, open it in OOD with the **Music Atlas** kernel.
+The E1-04 follow-up compares
 expanded labels with the published FMA annotations, checks for shared albums and shows
 artist concentration and duration cutoff sensitivity by genre and split.
 
@@ -70,8 +71,11 @@ audit reason. The audio shards stay in place.
 are metadata only and belong on the shared music service Lustre storage on WCSS.
 The audited proportional run also publishes `$ATLAS_DATA_DIR/manifests/tracks.parquet`. The
 pre-audit version stays under `ready/` and is available for preliminary experiments.
-The version derives from the input hashes and split recipe. Use the versioned files
-for experiments. `balanced_eval.parquet` is a supplementary one-vs-rest view of the
+On WCSS, use the short names `pre-audit-v1` and `pre-audit-rare-support-v1` under
+`$ATLAS_DATA_DIR/ready/` in the notebook or with `atlas fma-record-filter`. These links
+point to the original version directories. Use the full version ID in `summary.json`
+to pin a run to a specific set of inputs and split recipe.
+`balanced_eval.parquet` is a supplementary one-vs-rest view of the
 existing validation and test tracks. For each scored genre it samples equally many
 positives and annotated tracks without that tag, using the smallest pool as the common
 quota and prioritising distinct groups. Keep results from this diagnostic separate
