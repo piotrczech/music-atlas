@@ -23,6 +23,11 @@ def main():
     fma.add_argument("--probe", action="store_true", help="Only report sizes and shard counts.")
     fma.add_argument("--limit", type=int, default=0, help="Download at most N shards.")
     fma.add_argument("--workers", type=int, default=4)
+    metadata = commands.add_parser("fma-metadata", help="Summarise the FMA-full catalogue.")
+    metadata.add_argument("--output", type=Path, help="New directory for the report.")
+    metadata.add_argument(
+        "--manifest", type=Path, help="Audited CSV or Parquet with track_id and valid."
+    )
     args = parser.parse_args()
     if args.command == "doctor":
         result = {"paths": paths(), "profile": profile(args.profile)}
@@ -30,6 +35,18 @@ def main():
         try:
             result = download(paths()["data"], args.probe, args.limit, args.workers)
         except (OSError, ValueError) as error:
+            parser.exit(1, f"{error}\n")
+    elif args.command == "fma-metadata":
+        try:
+            from music_atlas.fma_metadata import explore
+        except ModuleNotFoundError as error:
+            parser.exit(1, f"{error}. Install with uv sync --locked --extra research.\n")
+        storage = paths()
+        try:
+            result = explore(
+                storage["data"], args.output or storage["outputs"] / "fma-metadata", args.manifest
+            )
+        except (KeyError, OSError, ValueError) as error:
             parser.exit(1, f"{error}\n")
     elif args.command == "demo":
         args.output.parent.mkdir(parents=True, exist_ok=True)
