@@ -113,3 +113,12 @@ Open http://localhost:3000. API documentation is available at http://localhost:8
 - [Development guide](docs/DEVELOPMENT.md): repository layout, WCSS, MLflow and Docker.
 - [Experimental protocol](docs/EXPERIMENTS.md): data splits, representations and evaluation.
 - [Current tasks](tasks/README.md)
+
+Notebooks in `notebooks/` run on WCSS through Open OnDemand and keep only aggregate outputs,
+so they read on GitHub without access to the cluster:
+
+- `01-data-exploration.ipynb`: from the FMA catalogue to the versioned train/validation/test
+  splits, with genre support, artist concentration and leakage checks.
+- `fma_metadata.ipynb`: genre hierarchy, co-occurrence and metadata coverage; E1-03 merges it
+  into `01-data-exploration.ipynb`.
+- `fma_shards.ipynb`: browse the audio shards and play a track through the shared loader.

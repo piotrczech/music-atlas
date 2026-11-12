@@ -53,7 +53,7 @@ audio and a nullable `duplicate_group` for confirmed duplicates. Keep re-encodin
 candidates out of the confirmed group column.
 
 The job compares the published split, random assignment of groups and proportionate
-assignment of groups. The saved tables in `notebooks/fma_splits.ipynb` show the results
+assignment of groups. The saved tables in `notebooks/01-data-exploration.ipynb` show the results
 on GitHub. To rerun the analysis, open it in OOD with the **Music Atlas** kernel.
 The E1-04 follow-up compares
 expanded labels with the published FMA annotations, checks for shared albums and shows
