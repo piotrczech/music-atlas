@@ -23,6 +23,17 @@ def main():
     fma.add_argument("--probe", action="store_true", help="Only report sizes and shard counts.")
     fma.add_argument("--limit", type=int, default=0, help="Download at most N shards.")
     fma.add_argument("--workers", type=int, default=4)
+    manifest = commands.add_parser("fma-split", help="Prepare versioned FMA dataset splits.")
+    manifest.add_argument("--audit", type=Path, help="Apply the completed E1-03 audio audit.")
+    manifest.add_argument(
+        "--strategy", choices=("proportional", "rare-support"), default="proportional",
+        help="Set label targets for the held-out splits.",
+    )
+    record_filter = commands.add_parser("fma-record-filter", help="Record exclusions for a run.")
+    record_filter.add_argument("version", help="Version of the existing FMA split manifest.")
+    record_filter.add_argument("representation")
+    record_filter.add_argument("run_id")
+    record_filter.add_argument("exclusions", type=Path, help="CSV with track_id and error columns.")
     args = parser.parse_args()
     if args.command == "doctor":
         result = {"paths": paths(), "profile": profile(args.profile)}
@@ -30,6 +41,24 @@ def main():
         try:
             result = download(paths()["data"], args.probe, args.limit, args.workers)
         except (OSError, ValueError) as error:
+            parser.exit(1, f"{error}\n")
+    elif args.command in {"fma-split", "fma-record-filter"}:
+        try:
+            storage = paths()
+            if args.command == "fma-split":
+                from music_atlas.manifest import build
+
+                result = build(storage["data"], args.audit, strategy=args.strategy)
+            else:
+                from music_atlas.split_views import record_filter
+
+                result = record_filter(
+                    storage["data"], storage["artifacts"], args.version,
+                    args.representation, args.run_id, args.exclusions,
+                )
+        except ImportError as error:
+            parser.exit(1, f"{error}. Install with uv sync --locked --extra research.\n")
+        except (OSError, ValueError, KeyError) as error:
             parser.exit(1, f"{error}\n")
     elif args.command == "demo":
         args.output.parent.mkdir(parents=True, exist_ok=True)
