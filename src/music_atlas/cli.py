@@ -23,6 +23,9 @@ def main():
     fma.add_argument("--probe", action="store_true", help="Only report sizes and shard counts.")
     fma.add_argument("--limit", type=int, default=0, help="Download at most N shards.")
     fma.add_argument("--workers", type=int, default=4)
+    audit = commands.add_parser("fma-audit", help="Audit FMA-full audio, labels and licences.")
+    audit.add_argument("--limit", type=int, default=0, help="Measure at most N shards.")
+    audit.add_argument("--workers", type=int, default=4)
     manifest = commands.add_parser("fma-split", help="Prepare versioned FMA dataset splits.")
     manifest.add_argument("--audit", type=Path, help="Apply the completed E1-03 audio audit.")
     manifest.add_argument(
@@ -42,10 +45,14 @@ def main():
             result = download(paths()["data"], args.probe, args.limit, args.workers)
         except (OSError, ValueError) as error:
             parser.exit(1, f"{error}\n")
-    elif args.command in {"fma-split", "fma-record-filter"}:
+    elif args.command in {"fma-audit", "fma-split", "fma-record-filter"}:
         try:
             storage = paths()
-            if args.command == "fma-split":
+            if args.command == "fma-audit":
+                from music_atlas.audit import run
+
+                result = run(storage["data"], args.workers, args.limit)
+            elif args.command == "fma-split":
                 from music_atlas.manifest import build
 
                 result = build(storage["data"], args.audit, strategy=args.strategy)

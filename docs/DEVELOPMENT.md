@@ -102,6 +102,9 @@ tracks under `$ATLAS_DATA_DIR/fma/`, with the inventory in `$ATLAS_DATA_DIR/mani
 Lustre suits few large files, so jobs read MP3s straight from the shards; Bem2's
 `TMPDIR` is Lustre too, so unpack only to node-local storage such as Lem's NVMe.
 Bound spectrogram caches and use sharded outputs.
+`scripts/slurm/fma-audit.sbatch` runs `atlas fma-audit` (research extra), one shard per core,
+into `manifests/fma_audio_audit/NNN.parquet`; reruns skip measured shards. A laptop core
+decoded shard 002 at about 440× real time, so the 8,200 audio hours need about 19 CPU-hours.
 Job-local `TMPDIR` is temporary and must not hold the only copy of results.
 
 ### Notebooks on Open OnDemand

@@ -46,11 +46,15 @@ approximate. Compare models within the same dataset version and use the proporti
 version for the primary prevalence-preserving benchmark. Keep all three split files
 from one version together in each experiment.
 
-**E1-03 integration.** Add `--audit "$ATLAS_DATA_DIR/manifests/fma_audio_audit.parquet"`
-after E1-03 is complete. The audit needs one row per present `track_id`, with Boolean
-`valid`, an `error` for rejected audio, positive decoded `duration_seconds` for valid
-audio and a nullable `duplicate_group` for confirmed duplicates. Keep re-encoding
-candidates out of the confirmed group column.
+**E1-03 integration.** Add `--audit "$ATLAS_DATA_DIR/manifests/fma_audio_audit.parquet"`,
+written by `atlas fma-audit` with one row per inventory track. `error` is `inventory_missing`,
+`decode_error`, `loader_error`, `too_short` (under 1 s) or `silent` (peak under −60 dBFS);
+`warning` marks valid tracks as `duration_mismatch` (over 2 s from FMA), `short` (under one
+window) or `quiet` (RMS under −40 dBFS). `duplicate_group` is the lowest track ID sharing a
+SHA-1. `reencoding_candidate` links other tracks within 1 s whose per-second loudness over
+the first two minutes correlates at 0.98 or more; candidates stay unresolved.
+`listening_example` marks valid CC0, Public Domain Mark, CC BY and CC BY-SA tracks.
+`fma_audio_audit.json` counts exclusions, annotation gaps and genre and artist coverage.
 
 The job compares the published split, random assignment of groups and proportionate
 assignment of groups. The saved tables in `notebooks/01-data-exploration.ipynb` show the results
@@ -108,7 +112,8 @@ and class mappings alongside the model. Query processing uses the same settings.
 The initial full profile samples three deterministic 10-second windows per track,
 covering its beginning, middle and end; the quick profile samples one centred window.
 `music_atlas.loader` applies this to every method: windows overlap in short tracks, and a
-track shorter than one window gets a single zero-padded window. Full catalogue coverage
+track shorter than one window gets a single zero-padded window. MP3s with zero padding after
+the ID3 tag, which libsndfile rejects, are read from their first frame. Full catalogue coverage
 does not imply processing every second of each track.
 
 ## Comparisons
