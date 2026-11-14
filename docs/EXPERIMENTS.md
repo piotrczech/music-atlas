@@ -112,8 +112,8 @@ and class mappings alongside the model. Query processing uses the same settings.
 The initial full profile samples three deterministic 10-second windows per track,
 covering its beginning, middle and end; the quick profile samples one centred window.
 `music_atlas.loader` applies this to every method: windows overlap in short tracks, and a
-track shorter than one window gets a single zero-padded window. MP3s with zero padding after
-the ID3 tag, which libsndfile rejects, are read from their first frame. Full catalogue coverage
+track shorter than one window gets a single zero-padded window. When libsndfile rejects an MP3
+because of its ID3 tag, the file is read from its first frame. Full catalogue coverage
 does not imply processing every second of each track.
 
 ## Comparisons

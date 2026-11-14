@@ -15,11 +15,11 @@ PREROLL_SECONDS = 1.0
 
 
 def open_audio(source: str | Path | BinaryIO) -> sf.SoundFile:
-    """Open with libsndfile, retrying an MP3 from its first frame after a zero-padded ID3 tag."""
+    """Open with libsndfile, retrying an MP3 from its first frame after the ID3 tag."""
     try:
         return sf.SoundFile(source)
     except sf.LibsndfileError as error:
-        if error.code != 1:  # SF_ERR_UNRECOGNISED_FORMAT
+        if error.code == 2:  # SF_ERR_SYSTEM, such as a missing file
             raise
         if isinstance(source, str | Path):
             data = Path(source).read_bytes()
@@ -28,9 +28,10 @@ def open_audio(source: str | Path | BinaryIO) -> sf.SoundFile:
             data = source.read()
         if data[:3] != b"ID3" or len(data) < 10:
             raise
-        # libsndfile expects a frame right after the tag; 2 of 64 tracks in FMA shard 002 pad it.
+        # libsndfile rejects valid FMA MP3s whose tag it cannot parse or that is followed by
+        # zero padding or leftover ID3v2.2 frames (11 of 1,618 tracks in shards 000-001).
         end = 10 + (data[6] << 21 | data[7] << 14 | data[8] << 7 | data[9])
-        start = re.compile(rb"[^\0]").search(data, end + (10 if data[5] & 0x10 else 0))
+        start = re.compile(rb"\xff[\xe0-\xff]").search(data, end + (10 if data[5] & 0x10 else 0))
         if start is None:
             raise
         return sf.SoundFile(io.BytesIO(data[start.start() :]))

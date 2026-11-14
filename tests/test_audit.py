@@ -30,7 +30,7 @@ def test_audit_explains_every_track_and_feeds_the_split(tmp_path):
         1: original,
         2: original,  # byte-identical: confirmed duplicate
         3: mp3(20, compression_level=0.9),  # same audio, other bitrate: candidate only
-        4: b"ID3\3\0\0\0\0\0\0" + bytes(100) + mp3(8, seed=2),  # padding libsndfile rejects
+        4: b"ID3\3\0\0\0\0\0\0TT2\0\0\4\0Song" + mp3(8, seed=2),  # leftover tag libsndfile rejects
         5: b"not audio",
         6: mp3(5, gain=0),
         7: mp3(0.5),
