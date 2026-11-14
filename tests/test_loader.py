@@ -1,3 +1,6 @@
+import io
+import tarfile
+
 import numpy as np
 import pytest
 import soundfile as sf
@@ -127,3 +130,37 @@ def test_truncated_mp3_windows_stay_within_the_decoded_audio(tmp_path):
     assert len(windows) == 3 and 15 < decoded < 25
     assert windows[-1].end_seconds == pytest.approx(decoded)
     assert all(np.abs(window.samples).max() > 0.2 for window in windows)
+
+
+@needs_mp3
+def test_tar_member_is_read_in_place_like_the_file(tmp_path):
+    path = chirp_mp3(tmp_path / "chirp.mp3", 40)
+    with tarfile.open(tmp_path / "shard.tar", "w") as tar:
+        tar.add(path, arcname="000/000002.mp3")
+        broken = tarfile.TarInfo("000/000003.mp3")
+        broken.size = 100
+        tar.addfile(broken, io.BytesIO(b"\0" * 100))
+    with tarfile.open(tmp_path / "shard.tar") as tar:
+        windows = load_windows(tar.extractfile("000/000002.mp3"), 2, **FULL)
+        with pytest.raises(ValueError, match="000/000003.mp3"):
+            load_windows(tar.extractfile("000/000003.mp3"), 3, **FULL)
+    for window, expected in zip(windows, load_windows(path, 2, **FULL), strict=True):
+        assert bounds([window]) == bounds([expected])
+        np.testing.assert_array_equal(window.samples, expected.samples)
+
+
+@needs_mp3
+def test_mp3_with_zeros_after_its_id3_tag_is_decoded(tmp_path):
+    path = chirp_mp3(tmp_path / "chirp.mp3", 30)
+    title = b"\x03chirp"
+    frame = b"TIT2" + bytes([0, 0, 0, len(title), 0, 0]) + title
+    padded = b"ID3\x04\0\0" + bytes([0, 0, 0, len(frame)]) + frame + b"\0" * 800
+    padded += path.read_bytes()
+    # Shard members are file objects, where libsndfile does not skip the zeros itself.
+    with pytest.raises(RuntimeError, match="Format not recognised"):
+        sf.info(io.BytesIO(padded))
+    for window, expected in zip(
+        load_windows(io.BytesIO(padded), 1, **FULL), load_windows(path, 1, **FULL), strict=True
+    ):
+        assert bounds([window]) == bounds([expected])
+        np.testing.assert_array_equal(window.samples, expected.samples)

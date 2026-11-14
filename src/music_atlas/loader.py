@@ -1,7 +1,9 @@
+import io
 import math
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
+from typing import BinaryIO
 
 import numpy as np
 import soundfile as sf
@@ -32,17 +34,22 @@ def window_starts(frames: int, length: int, count: int) -> list[int]:
 
 
 def load_windows(
-    path: str | Path,
+    path: str | Path | BinaryIO,
     track_id: int | str,
     *,
     sample_rate: int,
     window_seconds: float,
     windows_per_track: int,
 ) -> list[Window]:
-    """Decode only the selected windows of one track, mixed to mono and resampled."""
+    """Decode only the selected windows of one track, mixed to mono and resampled.
+
+    `path` may also be a seekable file object, such as a member of a tar shard.
+    """
     if sample_rate <= 0 or window_seconds <= 0 or windows_per_track < 1:
         raise ValueError("Sample rate, window length and window count must be positive.")
     size = round(window_seconds * sample_rate)
+    # A tar member reports its path inside the archive as `name`.
+    name = getattr(path, "name", path)
     try:
         with sf.SoundFile(path) as file:
             # Positions use native frames, so every target rate receives the same time spans.
@@ -61,9 +68,9 @@ def load_windows(
                     if len(y) < min(length, frames - start):
                         break
                     if not len(y):
-                        raise ValueError(f"No audio decoded from {path}.")
+                        raise ValueError(f"No audio decoded from {name}.")
                     if not np.isfinite(y).all():
-                        raise ValueError(f"Audio contains non-finite samples: {path}.")
+                        raise ValueError(f"Audio contains non-finite samples: {name}.")
                     end = start + len(y)
                     y = resample_poly(y, sample_rate // divisor, native // divisor)
                     samples = np.zeros(size, dtype=np.float32)
@@ -76,7 +83,32 @@ def load_windows(
                 # MP3 headers can overstate the length; refit the windows to the decoded audio.
                 frames = start + len(y)
     except RuntimeError as error:  # sf.LibsndfileError, including missing files
-        raise ValueError(f"Cannot decode {path}: {error}") from error
+        audio = None if isinstance(path, str | Path) else skip_id3_padding(path)
+        if audio is None:
+            raise ValueError(f"Cannot decode {name}: {error}") from error
+        return load_windows(
+            audio, track_id, sample_rate=sample_rate, window_seconds=window_seconds,
+            windows_per_track=windows_per_track,
+        )
+
+
+def skip_id3_padding(file: BinaryIO) -> io.BytesIO | None:
+    """Return the MP3 after zeros that follow its ID3v2 tag, or None if there are none.
+
+    libsndfile opens such a file from a path but rejects it from a file object, which is how
+    shard members are read (7 of the first 128 sampled FMA tracks).
+    """
+    file.seek(0)
+    data = file.read()
+    if data[:3] != b"ID3" or len(data) < 10:
+        return None
+    end = 10 + (data[6] << 21 | data[7] << 14 | data[8] << 7 | data[9])
+    start = len(data) - len(data[end:].lstrip(b"\0"))
+    if start == end:
+        return None
+    audio = io.BytesIO(data[start:])
+    audio.name = getattr(file, "name", "<file object>")
+    return audio
 
 
 def iter_windows(
