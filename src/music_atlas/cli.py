@@ -34,6 +34,10 @@ def main():
     record_filter.add_argument("representation")
     record_filter.add_argument("run_id")
     record_filter.add_argument("exclusions", type=Path, help="CSV with track_id and error columns.")
+    sample = commands.add_parser(
+        "quick-sample", help="Build or reload the quick-profile sample and time the loader.",
+    )
+    sample.add_argument("version", nargs="?", default="pre-audit-v1")
     args = parser.parse_args()
     if args.command == "doctor":
         result = {"paths": paths(), "profile": profile(args.profile)}
@@ -42,13 +46,17 @@ def main():
             result = download(paths()["data"], args.probe, args.limit, args.workers)
         except (OSError, ValueError) as error:
             parser.exit(1, f"{error}\n")
-    elif args.command in {"fma-split", "fma-record-filter"}:
+    elif args.command in {"fma-split", "fma-record-filter", "quick-sample"}:
         try:
             storage = paths()
             if args.command == "fma-split":
                 from music_atlas.manifest import build
 
                 result = build(storage["data"], args.audit, strategy=args.strategy)
+            elif args.command == "quick-sample":
+                from music_atlas.sample import run
+
+                result = run(storage["data"], args.version)
             else:
                 from music_atlas.split_views import record_filter
 

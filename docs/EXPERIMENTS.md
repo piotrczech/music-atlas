@@ -111,6 +111,14 @@ covering its beginning, middle and end; the quick profile samples one centred wi
 track shorter than one window gets a single zero-padded window. Full catalogue coverage
 does not imply processing every second of each track.
 
+`atlas quick-sample [VERSION]` fixes the quick profile's input: up to `max_tracks` valid
+training tracks in the profile's seeded order, taking the scored genres in turn and
+preferring artists not yet sampled. `$ATLAS_DATA_DIR/samples/<version>/` holds `sample.json`
+(dataset version, manifest hash, seed, profile and tracks), `rejects.csv` (`track_id,error`
+for `atlas fma-record-filter`) and `audio.tar` with the accepted MP3s. The first run reads
+them from the shards in place; later runs, including local ones, read only `audio.tar` and
+stop if the version's manifest hash has changed.
+
 ## Comparisons
 
 Compare acoustic features with logistic regression and one tree-based model, a compact
