@@ -115,14 +115,8 @@ sbatch scripts/slurm/quick-sample.sbatch
   it CPU; the rest was waiting on Lustre. Opening a shard's tar index takes about 4 s and one
   quick window about 0.06 s, so batch jobs process shard by shard.
 
-For local work, copy the sample and rerun it; a rerun reads only `audio.tar` (6 s on WCSS, 2 s
-on an Apple M5, about 250 MiB of memory):
-
-```bash
-mkdir -p data/samples
-rsync -a USER@ui.wcss.pl:/lustre/pd03/hpc-piotrczech-1792095018/music-atlas/data/samples/fma-cap10-v1 data/samples/
-uv run --extra research atlas quick-sample
-```
+For local work, copy the sample as the README shows (*Quick sample first, full data second*).
+A rerun reads only `audio.tar`: 6 s on WCSS and 2 s on an Apple M5, about 250 MiB of memory.
 
 ### Notebooks on Open OnDemand
 

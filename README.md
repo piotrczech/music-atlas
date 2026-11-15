@@ -66,6 +66,25 @@ npm run dev
 
 Open http://localhost:3000; API documentation is at http://localhost:8000/docs.
 
+### Quick sample first, full data second
+
+Develop every data or model step on the 128-track quick sample, then run it on the full dataset
+on WCSS. The sample is a fixed set of training tracks from the primary benchmark (about 1 GiB of
+MP3s); it stays on WCSS project storage, not in Git, and each of us copies it once:
+
+```bash
+mkdir -p data/samples
+rsync -a YOUR_LOGIN@ui.wcss.pl:/lustre/pd03/hpc-piotrczech-1792095018/music-atlas/data/samples/fma-cap10-v1 data/samples/
+uv run --extra research atlas quick-sample   # checks that all 128 tracks load
+```
+
+1. **Quick, locally:** run the step with the `quick` profile (one centred window per track) on
+   the sample until it works end to end and its tests pass.
+2. **Quick, on WCSS:** run the same command as a short job to check paths, the environment and
+   throughput; use the measured time to size the full job.
+3. **Full, on WCSS:** run the `full` profile on `ready/<version>/` from the shards, reading
+   shard by shard.
+
 ### Commands
 
 The data commands need `uv sync --locked --extra research` and run on WCSS as jobs through

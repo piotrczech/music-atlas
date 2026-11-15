@@ -16,6 +16,9 @@ before editing.
   keep artists, duplicates and fragments within one split.
 - Keep audio, caches, models and generated outputs outside Git, resolved through `ATLAS_*`
   paths. Local and WCSS runs use the same code with different profiles.
+- Develop and test every data or model step on the quick sample (`atlas quick-sample`, profile
+  `quick`) first. Run the `full` profile on WCSS only after the quick run works end to end, and
+  size the full job from the quick run's measured throughput (README, *Quick sample first*).
 - Keep unavailable models explicit in API responses and UI. Distinguish measured results
   from examples and exploratory visualisations.
 - For code changes, run Ruff and the relevant Python tests; for frontend changes, run
