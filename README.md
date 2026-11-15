@@ -8,6 +8,9 @@ to study what can be learned from a large collection of music recordings. Its ce
 question is how the choice of representation changes the patterns we discover, the
 genres we recognise and the tracks we consider similar.
 
+**Start here:** [`notebooks/01-data-exploration.ipynb`](notebooks/01-data-exploration.ipynb)
+introduces the data, what is wrong with it, how we clean it and how we split it.
+
 ## Research approach
 
 We compare three approaches on a shared dataset and evaluation protocol:
@@ -16,80 +19,33 @@ We compare three approaches on a shared dataset and evaluation protocol:
 |---|---|---|
 | Acoustic features: MFCCs, chroma, rhythm and spectral statistics | Logistic regression and a tree-based model | Feature interpretation, clustering and nearest neighbours |
 | Log-mel spectrograms | A compact CNN trained from scratch | Learned features and similarities between recordings |
-| Embeddings from a pretrained audio encoder | A linear classification head | Embedding maps, clustering and sounds-like search |
+| Embeddings from a frozen pretrained audio encoder | A linear classification head | Embedding maps, clustering and sounds-like search |
 
-The comparison covers predictive quality, retrieval relevance and computational cost.
-Listening examples complement numerical results, particularly where genre labels and
-perceived similarity disagree. Exploratory views connect these results to the underlying
-audio, making preprocessing choices and dataset limitations part of the analysis.
-
-The three branches provide different kinds of evidence. Hand-engineered acoustic features
-such as MFCCs, chroma, rhythm and spectral statistics give a compact, interpretable baseline.
-A CNN learns patterns from log-mel spectrograms, which preserve how frequency content changes
-over time. A frozen pretrained audio encoder turns each window into an embedding vector; a
-lightweight linear classifier can test genre information in that space, while nearest-neighbour
-search can compare tracks by their vectors. Freezing the encoder avoids a large fine-tuning run
-and lets us measure encoder extraction separately from classifier training. These are planned
-experiments, not completed model results.
-
-All branches use one artist-disjoint train/validation/test split and deterministic audio windows.
-Classification will be compared with macro-F1, micro-F1 and mean average precision (mAP).
-Retrieval will use precision@10 and nDCG@10, alongside listening examples and resource costs.
-The held-out test split is reserved for final evaluation; artist and duplicate groups stay within
-one split to reduce leakage.
+All three use one artist-disjoint train/validation/test split and the same deterministic audio
+windows. Classification is compared with macro-F1, micro-F1 and mAP; retrieval with
+precision@10 and nDCG@10, alongside listening examples and computational cost. These are
+planned experiments, not completed model results.
 
 ## Data and computation
 
-The project uses [FMA-full](https://github.com/mdeff/fma), containing 106,574 full-length
-tracks organised in a hierarchy of 161 genres. The complete validated catalogue is
-intended for exploration and retrieval; supervised experiments use the recordings and
-labels supported by the agreed classification protocol. Audio is processed in windows,
-with representations aggregated at track level.
+The project uses [FMA-full](https://github.com/mdeff/fma): 106,574 full-length tracks in a
+hierarchy of 163 genres under 16 top-level genres. An audio audit excludes the 0.3% of files
+that are broken, and the primary benchmark `fma-cap10-v1` limits any one artist to 10% of a
+genre's validation or test tracks. The [experimental protocol](docs/EXPERIMENTS.md) defines
+the rules and formats.
 
-Large-scale processing and training run on [WCSS](https://man.e-science.pl/pl/kdm/bem2),
-using an allocation of **4,000 CPU hours, 300 GPU hours and 2 TB of storage**. Local
-development uses uv and a small reproducible sample. The same code runs on WCSS with
-the full profile, while datasets, caches and experiment artifacts reside on project
-storage outside the Git repository. MLflow records configurations, metrics and artifacts
-so that results can be compared and reproduced.
-
-### Local MLflow
-
-MLflow is the planned experiment tracker for run parameters, metrics and files such as plots,
-reports and exported vectors. Install its optional dependencies and start a local server:
-
-```bash
-uv sync --locked --extra research --extra tracking
-mkdir -p outputs artifacts/mlflow
-uv run mlflow server --host 127.0.0.1 --port 5000 \
-  --backend-store-uri sqlite:///outputs/mlflow.db \
-  --default-artifact-root ./artifacts/mlflow
-```
-
-Open http://127.0.0.1:5000 to view runs. The SQLite database stores run metadata; files are
-stored under `artifacts/mlflow/`. In the shell that will run experiments, set
-`MLFLOW_TRACKING_URI=http://127.0.0.1:5000` to point the client at this server. Keep it bound to
-localhost for local development. The experiment runner that logs Music Atlas jobs to MLflow is
-planned but is not yet implemented.
-
-For WCSS, the intended layout is to put the tracking database and MLflow artifact directory on
-persistent project storage, alongside the other `ATLAS_*` directories, so they survive jobs and
-are available from the cluster. The exact remote server setup and how local machines will reach
-it (for example, a tunnel) are still undecided. MLflow can expose run artifacts for download once
-that access path is configured; the final application bundle is a separate export and should not
-depend on a live MLflow server. See the [development guide](docs/DEVELOPMENT.md) before setting up
-tracking on WCSS.
+Processing and training run on [WCSS](https://man.e-science.pl/pl/kdm/bem2) with
+**4,000 CPU hours, 300 GPU hours and 2 TB of storage**. Local development uses uv and a
+128-track sample; the same code runs on WCSS with the full profile. Data, caches and artifacts
+live outside Git, and MLflow will record configurations, metrics and artifacts.
 
 ## Application
 
 A Next.js interface backed by FastAPI will bring together dataset exploration, audio
-inspection, genre predictions and nearest-neighbour search. Users will be able to
-compare representations for the same recording and listen to retrieved examples.
-The final application will run through Docker Compose with exported models and indexes,
-independently of the training environment.
-
-The current implementation supports audio upload, playback, waveform and power-spectrum
-plots, and basic acoustic measurements. Classification and retrieval are under development.
+inspection, genre predictions and nearest-neighbour search, comparing representations for
+the same recording. It currently supports audio upload, playback, waveform and power-spectrum
+plots and basic acoustic measurements. The final application runs through Docker Compose with
+exported models and indexes.
 
 ## Development
 
@@ -108,16 +64,23 @@ npm ci
 npm run dev
 ```
 
-Open http://localhost:3000. API documentation is available at http://localhost:8000/docs.
+Open http://localhost:3000; API documentation is at http://localhost:8000/docs.
 
-- [Development guide](docs/DEVELOPMENT.md): repository layout, WCSS, MLflow and Docker.
-- [Experimental protocol](docs/EXPERIMENTS.md): data splits, representations and evaluation.
-- [Current tasks](tasks/README.md)
+### Commands
 
-Notebooks in `notebooks/` run on WCSS through Open OnDemand and keep only aggregate outputs,
-so they read on GitHub without access to the cluster:
+The data commands need `uv sync --locked --extra research` and run on WCSS as jobs through
+`scripts/slurm/*.sbatch`, which pass extra arguments on.
 
-- `01-data-exploration.ipynb`: from the FMA catalogue through the audio audit to the versioned
-  train/validation/test splits, with genre support, artist concentration, the choice of split
-  and leakage checks.
-- `fma_shards.ipynb`: browse the audio shards and play a track through the shared loader.
+| Command | What it does |
+|---|---|
+| `atlas doctor --profile quick` | Show the resolved `ATLAS_*` paths and a profile |
+| `atlas demo`, `atlas analyze FILE` | Write a synthetic test tone; analyse up to 30 s of an audio file |
+| `atlas fma-download [--probe] [--limit N]` | Stream FMA-full into verified tar shards and write the inventory |
+| `atlas fma-audit [--limit N]` | Decode every track and write the audio audit |
+| `atlas fma-split --audit FILE [--max-artist-share 0.1] [--strategy rare-support] [--publish]` | Build a versioned train/validation/test split; `--publish` makes it the shared manifest |
+| `atlas fma-record-filter VERSION REPRESENTATION RUN_ID exclusions.csv` | Record the tracks a representation run could not use |
+| `uv run ruff check .`, `uv run pytest` | Lint and test; `npm run typecheck` and `npm run build` in `web/` |
+
+- [Development guide](docs/DEVELOPMENT.md): layout, WCSS, data pipeline, notebooks, MLflow and Docker
+- [Experimental protocol](docs/EXPERIMENTS.md): data, splits, metrics and representations
+- [Tasks](tasks/README.md)
