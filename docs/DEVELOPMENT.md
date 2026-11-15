@@ -106,12 +106,13 @@ Job-local `TMPDIR` is temporary and must not hold the only copy of results.
 
 `scripts/slurm/quick-sample.sbatch` builds the quick-profile sample (`atlas quick-sample`,
 format in [EXPERIMENTS.md](EXPERIMENTS.md)); rerunning it only times the loader on the
-sample. For local work copy `$ATLAS_DATA_DIR/samples/pre-audit-v1/` (1.2 GiB) into
-`data/samples/` and run `uv run --extra research atlas quick-sample`. In November 2026 the build took 11 min
-on one `bem2-cpu-short` core for 128 tracks from 89 shards, with 125 loaded and 3 rejected.
-Opening a shard's tar index takes about 4 s on Lustre, while one quick window decodes in
-about 0.06 s, so batch jobs should process shard by shard. Rerunning from `audio.tar` took
-8 s on WCSS and 2 s on an Apple M5, at about 200 MiB peak memory.
+sample. For local work copy `$ATLAS_DATA_DIR/samples/fma-cap10-v1/` (1 GiB) into
+`data/samples/` and run `uv run --extra research atlas quick-sample`. In November 2026 two
+builds on one `bem2-cpu-short` core took 11 and 20 min for 128 tracks from about 85 shards,
+with under 4 min of CPU time; the rest was waiting on Lustre. All 128 `fma-cap10-v1` tracks
+loaded. Opening a shard's tar index takes about 4 s, while one quick window decodes in about
+0.06 s, so batch jobs should process shard by shard. Rerunning from `audio.tar` took 6 s on
+WCSS and 2 s on an Apple M5, at about 250 MiB peak memory.
 
 ### Notebooks on Open OnDemand
 
