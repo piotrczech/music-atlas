@@ -111,7 +111,10 @@ def test_pre_audit_and_audited_publication_are_distinct(tmp_path, catalogue_file
     )
 
     audit.reset_index().to_parquet(audit_path)
-    ready = build(tmp_path, audit_path)
+    with pytest.raises(ValueError, match="shared manifest"):
+        build(tmp_path, publish=True)
+    assert not canonical.exists()
+    ready = build(tmp_path, audit_path, publish=True)
     table = pq.read_table(canonical)
     assert table.schema.metadata[b"dataset_version"] == ready["version"].encode()
     assert table.schema.metadata[b"audio_audited"] == b"true"
@@ -132,7 +135,7 @@ def test_pre_audit_and_audited_publication_are_distinct(tmp_path, catalogue_file
         "fma-penalty1-v1-"
     )
     assert pq.read_metadata(canonical).metadata[b"dataset_version"] == ready["version"].encode()
-    assert build(tmp_path, audit_path) == ready
+    assert build(tmp_path, audit_path, publish=True) == ready
 
     exclusions = tmp_path / "exclusions.csv"
     exclusions.write_text("track_id,error\n1,representation_failure\n", encoding="utf-8")

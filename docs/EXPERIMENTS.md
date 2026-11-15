@@ -47,8 +47,9 @@ version for the primary prevalence-preserving benchmark. Keep all three split fi
 from one version together in each experiment. `--max-artist-share 0.2` keeps an artist in
 training when it would supply more than 20% of a genre's validation or test quota, and
 `--concentration-penalty` makes such artists costlier to place there. These candidate versions
-are named after the option (`fma-cap20-v1`), leave `manifests/tracks.parquet` unchanged and are
-compared in the notebook before one is frozen.
+are named after the option (`fma-cap20-v1`) and are compared in the notebook before one is
+frozen. The selected primary benchmark is `fma-cap10-v1`, with `fma-rare-support-cap10-v1` as
+its supplementary partition.
 
 **E1-03 integration.** Add `--audit "$ATLAS_DATA_DIR/manifests/fma_audio_audit.parquet"`,
 written by `atlas fma-audit` with one row per inventory track. `error` is `inventory_missing`,
@@ -77,8 +78,9 @@ audit reason. The audio shards stay in place.
 `$ATLAS_DATA_DIR/ready/<version>/` contains `tracks.parquet`, `train.parquet`, `validation.parquet`,
 `test.parquet`, `labels.json`, `class_support.csv` and `summary.json`. The split files
 are metadata only and belong on the shared music service Lustre storage on WCSS.
-The audited proportional run also publishes `$ATLAS_DATA_DIR/manifests/tracks.parquet`. The
-pre-audit version stays under `ready/` and is available for preliminary experiments.
+Only a run with `--publish` replaces `$ATLAS_DATA_DIR/manifests/tracks.parquet`, which is the
+selected audited proportional version. The pre-audit version stays under `ready/` and is
+available for preliminary experiments.
 On WCSS, use the short names `pre-audit-v1` and `pre-audit-rare-support-v1` under
 `$ATLAS_DATA_DIR/ready/` in the notebook or with `atlas fma-record-filter`. These links
 point to the original version directories. Use the full version ID in `summary.json`

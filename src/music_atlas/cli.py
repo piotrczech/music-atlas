@@ -40,6 +40,10 @@ def main():
         "--concentration-penalty", type=float, default=0.0,
         help="Make artists that fill much of a held-out genre costlier to place there.",
     )
+    manifest.add_argument(
+        "--publish", action="store_true",
+        help="Make this version the shared manifests/tracks.parquet.",
+    )
     record_filter = commands.add_parser("fma-record-filter", help="Record exclusions for a run.")
     record_filter.add_argument("version", help="Version of the existing FMA split manifest.")
     record_filter.add_argument("representation")
@@ -66,7 +70,7 @@ def main():
                 result = build(
                     storage["data"], args.audit, strategy=args.strategy,
                     max_artist_share=args.max_artist_share,
-                    concentration_penalty=args.concentration_penalty,
+                    concentration_penalty=args.concentration_penalty, publish=args.publish,
                 )
             else:
                 from music_atlas.split_views import record_filter

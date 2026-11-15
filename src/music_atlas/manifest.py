@@ -373,9 +373,12 @@ def publish_version(destination, manifest, mapping, support, summary):
 
 
 def build(data_dir: Path, audit_path: Path | None = None, strategy: str = "proportional",
-          max_artist_share: float | None = None, concentration_penalty: float = 0.0) -> dict:
+          max_artist_share: float | None = None, concentration_penalty: float = 0.0,
+          publish: bool = False) -> dict:
     if strategy not in STRATEGIES:
         raise ValueError(f"Unknown split strategy: {strategy}.")
+    if publish and (audit_path is None or strategy != "proportional"):
+        raise ValueError("Only an audited proportional version can become the shared manifest.")
     if max_artist_share is not None and not 0 < max_artist_share <= 1:
         raise ValueError("The artist share limit must be greater than 0 and at most 1.")
     if concentration_penalty < 0:
@@ -440,9 +443,8 @@ def build(data_dir: Path, audit_path: Path | None = None, strategy: str = "propo
     destination = data_dir / "ready" / version
     summary.update(recipe, version=version, version_sha256=identity)
     balanced_quota = publish_version(destination, manifest, mapping, support, summary)
-    # Allocation variants are candidates; only the default recipe replaces the shared manifest.
-    default = max_artist_share is None and not concentration_penalty
-    if audited and strategy == "proportional" and default:
+    # Replacing the manifest every experiment reads is a decision, so it needs --publish.
+    if publish:
         with tempfile.TemporaryDirectory(prefix=".fma-", dir=canonical.parent) as temp:
             copy = Path(temp) / canonical.name
             shutil.copyfile(destination / "tracks.parquet", copy)
