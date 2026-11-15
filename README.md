@@ -66,6 +66,25 @@ npm run dev
 
 Open http://localhost:3000; API documentation is at http://localhost:8000/docs.
 
+### Quick sample first, full data second
+
+Develop every data or model step on the 128-track quick sample, then run it on the full dataset
+on WCSS. The sample is a fixed set of training tracks from the primary benchmark (about 1 GiB of
+MP3s); it stays on WCSS project storage, not in Git, and each of us copies it once:
+
+```bash
+mkdir -p data/samples
+rsync -a YOUR_LOGIN@ui.wcss.pl:/lustre/pd03/hpc-piotrczech-1792095018/music-atlas/data/samples/fma-cap10-v1 data/samples/
+uv run --extra research atlas quick-sample   # checks that all 128 tracks load
+```
+
+1. **Quick, locally:** run the step with the `quick` profile (one centred window per track) on
+   the sample until it works end to end and its tests pass.
+2. **Quick, on WCSS:** run the same command as a short job to check paths, the environment and
+   throughput; use the measured time to size the full job.
+3. **Full, on WCSS:** run the `full` profile on `ready/<version>/` from the shards, reading
+   shard by shard.
+
 ### Commands
 
 The data commands need `uv sync --locked --extra research` and run on WCSS as jobs through
@@ -78,6 +97,7 @@ The data commands need `uv sync --locked --extra research` and run on WCSS as jo
 | `atlas fma-download [--probe] [--limit N]` | Stream FMA-full into verified tar shards and write the inventory |
 | `atlas fma-audit [--limit N]` | Decode every track and write the audio audit |
 | `atlas fma-split --audit FILE [--max-artist-share 0.1] [--strategy rare-support] [--publish]` | Build a versioned train/validation/test split; `--publish` makes it the shared manifest |
+| `atlas quick-sample [VERSION]` | Build the 128-track quick sample of the primary benchmark, or reload it from `audio.tar` and time the loader |
 | `atlas fma-record-filter VERSION REPRESENTATION RUN_ID exclusions.csv` | Record the tracks a representation run could not use |
 | `uv run ruff check .`, `uv run pytest` | Lint and test; `npm run typecheck` and `npm run build` in `web/` |
 

@@ -99,6 +99,7 @@ sbatch scripts/slurm/fma-download.sbatch          # --probe: sizes only, --limit
 sbatch scripts/slurm/fma-audit.sbatch
 sbatch scripts/slurm/fma-split.sbatch --audit "$ATLAS_DATA_DIR/manifests/fma_audio_audit.parquet" \
   --max-artist-share 0.1 --publish
+sbatch scripts/slurm/quick-sample.sbatch
 ```
 
 - **Download** streams the 879 GiB archive without storing it and writes one verified tar per
@@ -109,6 +110,13 @@ sbatch scripts/slurm/fma-split.sbatch --audit "$ATLAS_DATA_DIR/manifests/fma_aud
   19 CPU-hours for the 8,200 audio hours.
 - **Split** takes minutes on one core. The data notebook lists the candidate versions to build
   before comparing them.
+- **Quick sample** copies 128 training tracks from about 85 shards into
+  `samples/fma-cap10-v1/` (1 GiB). Two builds on one core took 11 and 20 min, under 4 min of
+  it CPU; the rest was waiting on Lustre. Opening a shard's tar index takes about 4 s and one
+  quick window about 0.06 s, so batch jobs process shard by shard.
+
+For local work, copy the sample as the README shows (*Quick sample first, full data second*).
+A rerun reads only `audio.tar`: 6 s on WCSS and 2 s on an Apple M5, about 250 MiB of memory.
 
 ### Notebooks on Open OnDemand
 

@@ -11,10 +11,14 @@ before editing.
   matching the English interface.
 - Keep changes focused and readable. Reuse existing modules; introduce an abstraction
   only when the implementation needs it. Comments explain non-obvious decisions.
-- Follow the formats in `docs/EXPERIMENTS.md`: use the primary benchmark version, fit
-  preprocessing on train, and keep artists, duplicates and fragments within one split.
+- Follow the formats in `docs/EXPERIMENTS.md`: read the primary benchmark version from
+  `[dataset] split` in `configs/` instead of hard-coding it, fit preprocessing on train, and
+  keep artists, duplicates and fragments within one split.
 - Keep audio, caches, models and generated outputs outside Git, resolved through `ATLAS_*`
   paths. Local and WCSS runs use the same code with different profiles.
+- Develop and test every data or model step on the quick sample (`atlas quick-sample`, profile
+  `quick`) first. Run the `full` profile on WCSS only after the quick run works end to end, and
+  size the full job from the quick run's measured throughput (README, *Quick sample first*).
 - Keep unavailable models explicit in API responses and UI. Distinguish measured results
   from examples and exploratory visualisations.
 - For code changes, run Ruff and the relevant Python tests; for frontend changes, run

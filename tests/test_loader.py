@@ -1,3 +1,6 @@
+import io
+import tarfile
+
 import numpy as np
 import pytest
 import soundfile as sf
@@ -127,3 +130,21 @@ def test_truncated_mp3_windows_stay_within_the_decoded_audio(tmp_path):
     assert len(windows) == 3 and 15 < decoded < 25
     assert windows[-1].end_seconds == pytest.approx(decoded)
     assert all(np.abs(window.samples).max() > 0.2 for window in windows)
+
+
+@needs_mp3
+def test_tar_member_is_read_in_place_like_the_file(tmp_path):
+    path = chirp_mp3(tmp_path / "chirp.mp3", 40)
+    with tarfile.open(tmp_path / "shard.tar", "w") as tar:
+        tar.add(path, arcname="000/000002.mp3")
+        broken = tarfile.TarInfo("000/000003.mp3")
+        broken.size = 100
+        tar.addfile(broken, io.BytesIO(b"\0" * 100))
+    with tarfile.open(tmp_path / "shard.tar") as tar:
+        windows = load_windows(tar.extractfile("000/000002.mp3"), 2, **FULL)
+        with pytest.raises(ValueError, match="000/000003.mp3"):
+            load_windows(tar.extractfile("000/000003.mp3"), 3, **FULL)
+    for window, expected in zip(windows, load_windows(path, 2, **FULL), strict=True):
+        assert bounds([window]) == bounds([expected])
+        np.testing.assert_array_equal(window.samples, expected.samples)
+
