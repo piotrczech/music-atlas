@@ -13,7 +13,8 @@ dimensionality reduction on training data only. Select models and thresholds on 
 then evaluate once on test.
 
 **Primary benchmark: `fma-cap10-v1`**, with `fma-rare-support-cap10-v1` as its supplementary
-partition. The criteria that selected it are in section 3 of the data notebook.
+partition. The criteria that selected it are in section 3 of the data notebook. Code reads the
+version from `[dataset] split` in `configs/*.toml` rather than repeating it.
 
 ## Data pipeline
 
@@ -25,6 +26,7 @@ Each step is a CPU job that writes under `$ATLAS_DATA_DIR` (commands in
 | Download | `atlas fma-download` | `fma/fma_full/NNN.tar` (156 shards), `fma/fma_metadata/`, `manifests/fma_full_inventory.csv` |
 | Audit | `atlas fma-audit` | `manifests/fma_audio_audit.parquet` and `.json` |
 | Split | `atlas fma-split --audit …` | `ready/<version>/`; with `--publish`, `manifests/tracks.parquet` |
+| Quick sample | `atlas quick-sample` | `samples/<version>/`: `sample.json`, `rejects.csv`, `audio.tar` |
 | Exclusions | `atlas fma-record-filter` | `filter.parquet` beside a representation run |
 
 ### Inventory
@@ -85,6 +87,16 @@ three split files of one version together and compare models within one version.
 tracks: for each scored genre it samples equally many tagged and untagged tracks, preferring
 distinct groups. Keep its results apart from the primary metrics.
 
+### Quick sample
+
+`atlas quick-sample` fixes the quick profile's input: up to `max_tracks` valid training tracks
+of the profile's dataset version in its seeded order, taking the scored genres in turn and
+preferring artists not yet sampled. `samples/<version>/` holds `sample.json` (dataset version,
+manifest hash, seed, profile and tracks), `rejects.csv` (`track_id,error` for
+`atlas fma-record-filter`) and `audio.tar` with the accepted MP3s. The first run reads them from
+the shards in place; later runs, including local ones, read only `audio.tar` and stop if the
+version's manifest hash has changed.
+
 ### Model-specific exclusions
 
 Record tracks a representation cannot use as `track_id,error` rows. `atlas fma-record-filter
@@ -140,14 +152,6 @@ queries use the same settings.
 end) in the full profile and one centred window in the quick profile. Windows overlap in short
 tracks, a track shorter than one window gets one zero-padded window, and an MP3 libsndfile
 rejects for its ID3 tag is read from its first frame.
-
-`atlas quick-sample [VERSION]` fixes the quick profile's input: up to `max_tracks` valid
-training tracks in the profile's seeded order, taking the scored genres in turn and
-preferring artists not yet sampled. `$ATLAS_DATA_DIR/samples/<version>/` holds `sample.json`
-(dataset version, manifest hash, seed, profile and tracks), `rejects.csv` (`track_id,error`
-for `atlas fma-record-filter`) and `audio.tar` with the accepted MP3s. The first run reads
-them from the shards in place; later runs, including local ones, read only `audio.tar` and
-stop if the version's manifest hash has changed.
 
 ## Comparisons
 

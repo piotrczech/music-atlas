@@ -78,6 +78,7 @@ The data commands need `uv sync --locked --extra research` and run on WCSS as jo
 | `atlas fma-download [--probe] [--limit N]` | Stream FMA-full into verified tar shards and write the inventory |
 | `atlas fma-audit [--limit N]` | Decode every track and write the audio audit |
 | `atlas fma-split --audit FILE [--max-artist-share 0.1] [--strategy rare-support] [--publish]` | Build a versioned train/validation/test split; `--publish` makes it the shared manifest |
+| `atlas quick-sample [VERSION]` | Build the 128-track quick sample of the primary benchmark, or reload it from `audio.tar` and time the loader |
 | `atlas fma-record-filter VERSION REPRESENTATION RUN_ID exclusions.csv` | Record the tracks a representation run could not use |
 | `uv run ruff check .`, `uv run pytest` | Lint and test; `npm run typecheck` and `npm run build` in `web/` |
 

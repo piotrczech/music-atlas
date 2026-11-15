@@ -11,8 +11,9 @@ before editing.
   matching the English interface.
 - Keep changes focused and readable. Reuse existing modules; introduce an abstraction
   only when the implementation needs it. Comments explain non-obvious decisions.
-- Follow the formats in `docs/EXPERIMENTS.md`: use the primary benchmark version, fit
-  preprocessing on train, and keep artists, duplicates and fragments within one split.
+- Follow the formats in `docs/EXPERIMENTS.md`: read the primary benchmark version from
+  `[dataset] split` in `configs/` instead of hard-coding it, fit preprocessing on train, and
+  keep artists, duplicates and fragments within one split.
 - Keep audio, caches, models and generated outputs outside Git, resolved through `ATLAS_*`
   paths. Local and WCSS runs use the same code with different profiles.
 - Keep unavailable models explicit in API responses and UI. Distinguish measured results

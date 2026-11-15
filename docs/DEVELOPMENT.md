@@ -99,6 +99,7 @@ sbatch scripts/slurm/fma-download.sbatch          # --probe: sizes only, --limit
 sbatch scripts/slurm/fma-audit.sbatch
 sbatch scripts/slurm/fma-split.sbatch --audit "$ATLAS_DATA_DIR/manifests/fma_audio_audit.parquet" \
   --max-artist-share 0.1 --publish
+sbatch scripts/slurm/quick-sample.sbatch
 ```
 
 - **Download** streams the 879 GiB archive without storing it and writes one verified tar per
@@ -109,16 +110,19 @@ sbatch scripts/slurm/fma-split.sbatch --audit "$ATLAS_DATA_DIR/manifests/fma_aud
   19 CPU-hours for the 8,200 audio hours.
 - **Split** takes minutes on one core. The data notebook lists the candidate versions to build
   before comparing them.
+- **Quick sample** copies 128 training tracks from about 85 shards into
+  `samples/fma-cap10-v1/` (1 GiB). Two builds on one core took 11 and 20 min, under 4 min of
+  it CPU; the rest was waiting on Lustre. Opening a shard's tar index takes about 4 s and one
+  quick window about 0.06 s, so batch jobs process shard by shard.
 
-`scripts/slurm/quick-sample.sbatch` builds the quick-profile sample (`atlas quick-sample`,
-format in [EXPERIMENTS.md](EXPERIMENTS.md)); rerunning it only times the loader on the
-sample. For local work copy `$ATLAS_DATA_DIR/samples/fma-cap10-v1/` (1 GiB) into
-`data/samples/` and run `uv run --extra research atlas quick-sample`. In November 2026 two
-builds on one `bem2-cpu-short` core took 11 and 20 min for 128 tracks from about 85 shards,
-with under 4 min of CPU time; the rest was waiting on Lustre. All 128 `fma-cap10-v1` tracks
-loaded. Opening a shard's tar index takes about 4 s, while one quick window decodes in about
-0.06 s, so batch jobs should process shard by shard. Rerunning from `audio.tar` took 6 s on
-WCSS and 2 s on an Apple M5, at about 250 MiB peak memory.
+For local work, copy the sample and rerun it; a rerun reads only `audio.tar` (6 s on WCSS, 2 s
+on an Apple M5, about 250 MiB of memory):
+
+```bash
+mkdir -p data/samples
+rsync -a USER@ui.wcss.pl:/lustre/pd03/hpc-piotrczech-1792095018/music-atlas/data/samples/fma-cap10-v1 data/samples/
+uv run --extra research atlas quick-sample
+```
 
 ### Notebooks on Open OnDemand
 
