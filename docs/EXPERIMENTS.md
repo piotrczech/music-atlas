@@ -44,7 +44,11 @@ when the proportional target is smaller, capped at 20% of that genre's tracks pe
 Independent group targets follow the same fractions. Whole groups make those counts
 approximate. Compare models within the same dataset version and use the proportional
 version for the primary prevalence-preserving benchmark. Keep all three split files
-from one version together in each experiment.
+from one version together in each experiment. `--max-artist-share 0.2` keeps an artist in
+training when it would supply more than 20% of a genre's validation or test quota, and
+`--concentration-penalty` makes such artists costlier to place there. These candidate versions
+are named after the option (`fma-cap20-v1`), leave `manifests/tracks.parquet` unchanged and are
+compared in the notebook before one is frozen.
 
 **E1-03 integration.** Add `--audit "$ATLAS_DATA_DIR/manifests/fma_audio_audit.parquet"`,
 written by `atlas fma-audit` with one row per inventory track. `error` is `inventory_missing`,

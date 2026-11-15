@@ -32,6 +32,14 @@ def main():
         "--strategy", choices=("proportional", "rare-support"), default="proportional",
         help="Set label targets for the held-out splits.",
     )
+    manifest.add_argument(
+        "--max-artist-share", type=float,
+        help="Keep an artist in training if it would supply more of a genre's held-out quota.",
+    )
+    manifest.add_argument(
+        "--concentration-penalty", type=float, default=0.0,
+        help="Make artists that fill much of a held-out genre costlier to place there.",
+    )
     record_filter = commands.add_parser("fma-record-filter", help="Record exclusions for a run.")
     record_filter.add_argument("version", help="Version of the existing FMA split manifest.")
     record_filter.add_argument("representation")
@@ -55,7 +63,11 @@ def main():
             elif args.command == "fma-split":
                 from music_atlas.manifest import build
 
-                result = build(storage["data"], args.audit, strategy=args.strategy)
+                result = build(
+                    storage["data"], args.audit, strategy=args.strategy,
+                    max_artist_share=args.max_artist_share,
+                    concentration_penalty=args.concentration_penalty,
+                )
             else:
                 from music_atlas.split_views import record_filter
 

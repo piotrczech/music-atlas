@@ -73,7 +73,8 @@ def components(*keys):
     return np.fromiter((find(i) for i in range(len(parent))), dtype=np.int64)
 
 
-def assign_groups(sizes, positives, strategy="proportional"):
+def assign_groups(sizes, positives, strategy="proportional", max_artist_share=None,
+                  concentration_penalty=0.0):
     """Seed with a size-matched random split, then improve per-label balance."""
     order = np.random.default_rng(SEED).permutation(len(sizes))
     track_targets = FRACTIONS * sizes.sum()
@@ -102,7 +103,16 @@ def assign_groups(sizes, positives, strategy="proportional"):
     # Compare relative deviations within each split so validation and test count too.
     importance = np.r_[n_labels, np.ones(n_labels), np.full(n_labels, 0.2)]
     weights = importance / np.maximum(targets, 1) ** 2
+    # One group (an artist with its duplicates) can fill a genre's held-out quota on its own.
+    # The limit keeps such groups in training; the penalty makes held-out concentration costly.
+    quota = np.maximum(targets[1:, 1 : 1 + n_labels].min(axis=0), 1)
+    pinned = np.zeros(len(sizes), dtype=bool)
+    if max_artist_share is not None:
+        pinned = (positives > max_artist_share * quota).any(axis=1)
+    concentration = concentration_penalty * ((positives / quota) ** 2).sum(axis=1)
+    held_out = np.array([0.0, 1.0, 1.0])
     canonical = random_split.copy()
+    canonical[pinned] = 0
     counts = np.zeros_like(targets)
     np.add.at(counts, canonical, vectors)
     groups = np.bincount(canonical, minlength=len(SPLITS))
@@ -112,7 +122,7 @@ def assign_groups(sizes, positives, strategy="proportional"):
         moved = False
         for group in order:
             previous = canonical[group]
-            if groups[previous] == 1:
+            if pinned[group] or groups[previous] == 1:
                 continue
             vector = vectors[group]
             residual = counts - targets
@@ -123,6 +133,7 @@ def assign_groups(sizes, positives, strategy="proportional"):
             gain = ((coverage == 0) & required).sum(axis=1)
             loss = ((coverage[previous] == 1) & required).sum()
             cost = add + remove + 0.5 * (loss - gain)
+            cost += concentration[group] * (held_out - held_out[previous])
             cost[previous] = 0
             chosen = int(np.argmin(cost))
             if cost[chosen] < -1e-12:
@@ -195,7 +206,8 @@ def baseline_report(labels, assignment, scored):
     return report
 
 
-def prepare(inventory, metadata, genres, audit, strategy="proportional"):
+def prepare(inventory, metadata, genres, audit, strategy="proportional", max_artist_share=None,
+            concentration_penalty=0.0):
     inventory = indexed(inventory, "Inventory")
     metadata = indexed(metadata, "Track metadata")
     genres = indexed(genres, "Genre metadata")
@@ -274,7 +286,7 @@ def prepare(inventory, metadata, genres, audit, strategy="proportional"):
     positives = np.zeros((len(sizes), len(roots)), dtype=np.int64)
     np.add.at(positives, inverse, labels[eligible])
     assignments = {}
-    allocations = assign_groups(sizes, positives, strategy)
+    allocations = assign_groups(sizes, positives, strategy, max_artist_share, concentration_penalty)
     for name, allocation in zip(("canonical", "group_random"), allocations, strict=True):
         if len(set(allocation)) != len(SPLITS):
             raise ValueError(f"{name} could not populate every split with independent groups.")
@@ -360,9 +372,14 @@ def publish_version(destination, manifest, mapping, support, summary):
     return quota
 
 
-def build(data_dir: Path, audit_path: Path | None = None, strategy: str = "proportional") -> dict:
+def build(data_dir: Path, audit_path: Path | None = None, strategy: str = "proportional",
+          max_artist_share: float | None = None, concentration_penalty: float = 0.0) -> dict:
     if strategy not in STRATEGIES:
         raise ValueError(f"Unknown split strategy: {strategy}.")
+    if max_artist_share is not None and not 0 < max_artist_share <= 1:
+        raise ValueError("The artist share limit must be greater than 0 and at most 1.")
+    if concentration_penalty < 0:
+        raise ValueError("The concentration penalty must not be negative.")
     canonical = data_dir / "manifests/tracks.parquet"
     if audit_path is not None and audit_path.resolve() == canonical.resolve():
         raise ValueError("The E1-03 audit must be separate from the canonical manifest.")
@@ -389,6 +406,13 @@ def build(data_dir: Path, audit_path: Path | None = None, strategy: str = "propo
         prefix = f"{prefix}-rare-support"
         recipe.update(strategy=strategy, rare_eval_target=RARE_EVAL_TARGET,
                       rare_eval_max_fraction=RARE_EVAL_MAX_FRACTION)
+    # Added only when used, so the identities of earlier versions stay the same.
+    if max_artist_share is not None:
+        prefix = f"{prefix}-cap{round(100 * max_artist_share)}"
+        recipe["max_artist_share"] = max_artist_share
+    if concentration_penalty:
+        prefix = f"{prefix}-penalty{concentration_penalty:g}"
+        recipe["concentration_penalty"] = concentration_penalty
     identity = hashlib.sha256(json.dumps(recipe, sort_keys=True).encode()).hexdigest()
     short_version = f"{prefix}-v{VERSION}"
     version = f"{short_version}-{identity[:16]}"
@@ -407,14 +431,18 @@ def build(data_dir: Path, audit_path: Path | None = None, strategy: str = "propo
         audit = pd.read_parquet(audit_path, columns=[
             "track_id", "valid", "error", "duplicate_group", "duration_seconds",
         ]).set_index("track_id")
-    manifest, mapping, support, summary = prepare(inventory, metadata, genres, audit, strategy)
+    manifest, mapping, support, summary = prepare(
+        inventory, metadata, genres, audit, strategy, max_artist_share, concentration_penalty,
+    )
     if hashes != {name: digest(path) for name, path in sources.items()}:
         raise ValueError("Inputs changed during manifest preparation. Retry with stable inputs.")
 
     destination = data_dir / "ready" / version
     summary.update(recipe, version=version, version_sha256=identity)
     balanced_quota = publish_version(destination, manifest, mapping, support, summary)
-    if audited and strategy == "proportional":
+    # Allocation variants are candidates; only the default recipe replaces the shared manifest.
+    default = max_artist_share is None and not concentration_penalty
+    if audited and strategy == "proportional" and default:
         with tempfile.TemporaryDirectory(prefix=".fma-", dir=canonical.parent) as temp:
             copy = Path(temp) / canonical.name
             shutil.copyfile(destination / "tracks.parquet", copy)

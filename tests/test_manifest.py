@@ -128,6 +128,9 @@ def test_pre_audit_and_audited_publication_are_distinct(tmp_path, catalogue_file
     assert seen == set(range(1, 19)) - {2, 18}
     alternate_audited = build(tmp_path, audit_path, strategy="rare-support")
     assert alternate_audited["audio_audited"] and alternate_audited["version"] != ready["version"]
+    assert build(tmp_path, audit_path, concentration_penalty=1.0)["version"].startswith(
+        "fma-penalty1-v1-"
+    )
     assert pq.read_metadata(canonical).metadata[b"dataset_version"] == ready["version"].encode()
     assert build(tmp_path, audit_path) == ready
 
@@ -197,6 +200,22 @@ def test_balanced_eval_preserves_splits_and_uses_independent_groups(tmp_path):
     assert len(rows) == len(view) == 16
     assert rows.groupby(["split", "genre_id", "label_present"])["split_group"].nunique().eq(2).all()
     assert all((row.genre_id in row.genre_ids) == row.label_present for row in rows.itertuples())
+
+
+def test_artist_limits_keep_prolific_artists_out_of_held_out_splits():
+    sizes = np.ones(400, dtype=int)
+    positives = np.zeros((400, 1), dtype=int)
+    positives[6:200, 0] = 1
+    sizes[:6] = positives[:6, 0] = 30  # six prolific artists
+
+    def largest_share(canonical):
+        return max(positives[canonical == split, 0].max() / positives[canonical == split, 0].sum()
+                   for split in (1, 2))
+
+    assert largest_share(assign_groups(sizes, positives)[0]) > 0.5
+    for options in ({"max_artist_share": 0.2}, {"concentration_penalty": 4.0}):
+        canonical, _ = assign_groups(sizes, positives, **options)
+        assert not canonical[:6].any() and largest_share(canonical) < 0.2
 
 
 def test_rare_support_enriches_both_held_out_splits():
