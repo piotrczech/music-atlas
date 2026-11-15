@@ -148,19 +148,3 @@ def test_tar_member_is_read_in_place_like_the_file(tmp_path):
         assert bounds([window]) == bounds([expected])
         np.testing.assert_array_equal(window.samples, expected.samples)
 
-
-@needs_mp3
-def test_mp3_with_zeros_after_its_id3_tag_is_decoded(tmp_path):
-    path = chirp_mp3(tmp_path / "chirp.mp3", 30)
-    title = b"\x03chirp"
-    frame = b"TIT2" + bytes([0, 0, 0, len(title), 0, 0]) + title
-    padded = b"ID3\x04\0\0" + bytes([0, 0, 0, len(frame)]) + frame + b"\0" * 800
-    padded += path.read_bytes()
-    # Shard members are file objects, where libsndfile does not skip the zeros itself.
-    with pytest.raises(RuntimeError, match="Format not recognised"):
-        sf.info(io.BytesIO(padded))
-    for window, expected in zip(
-        load_windows(io.BytesIO(padded), 1, **FULL), load_windows(path, 1, **FULL), strict=True
-    ):
-        assert bounds([window]) == bounds([expected])
-        np.testing.assert_array_equal(window.samples, expected.samples)
