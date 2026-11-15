@@ -99,7 +99,7 @@ def build(data_dir: Path, ready: Path, target: Path, settings: dict, seed: int, 
     return sample, errors
 
 
-def run(data_dir: Path, version: str = "pre-audit-v1") -> dict:
+def run(data_dir: Path, version: str = "fma-cap10-v1") -> dict:
     """Build the sample on first use, otherwise reload it from audio.tar; time the loader."""
     quick = profile("quick")
     settings = {key: quick[key] for key in ("sample_rate", "window_seconds", "windows_per_track")}

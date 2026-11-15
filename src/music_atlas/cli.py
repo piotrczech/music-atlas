@@ -37,7 +37,7 @@ def main():
     sample = commands.add_parser(
         "quick-sample", help="Build or reload the quick-profile sample and time the loader.",
     )
-    sample.add_argument("version", nargs="?", default="pre-audit-v1")
+    sample.add_argument("version", nargs="?", default="fma-cap10-v1")
     args = parser.parse_args()
     if args.command == "doctor":
         result = {"paths": paths(), "profile": profile(args.profile)}
