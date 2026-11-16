@@ -21,5 +21,5 @@ node_modules/
 .DS_Store
 
 # Keep only the current stage's task briefs in shared Git history.
-/tasks/E[2-5]-*.md
+/tasks/E[3-5]-*.md
 /tasks/index.csv
