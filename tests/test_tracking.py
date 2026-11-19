@@ -1,5 +1,6 @@
 import json
 
+import pandas as pd
 import pytest
 
 from music_atlas.tracking import track
@@ -23,21 +24,53 @@ def finished_run(storage, run):
     return record, mlflow.get_run(record["mlflow_run_id"])
 
 
-def test_completed_run_records_dataset_counts_and_status(storage):
-    with track("probe", "quick", storage, "v1") as run:
-        run.log({"tracks": 4, "seconds": 1.5, "source": "archive", "flag": True, "peak": None})
+def test_completed_run_records_dataset_metrics_and_files(storage, tmp_path):
+    report = tmp_path / "report.csv"
+    report.write_text("genre,recall\n", encoding="utf-8")
+    tracks = pd.DataFrame({"track_id": [1, 2, 3], "artist_id": [7, 7, 8],
+                           "genre_ids": [[2, 30], [2], [3]]})
+    with track("probe", "quick", storage, "v1", description="A probe.") as run:
+        run.log_dataset(tracks, "train", {2: "International", 3: "Blues"}, {"seed": 42})
+        run.log({"loaded": 3, "source": "archive", "flag": True, "peak": None,
+                 "recall": {"Rock": 0.5}})
+        run.log_file(report, "evaluation")
+        with pytest.raises(ValueError, match="folder"):
+            run.log_file(report, "reports")
     record, logged = finished_run(storage, run)
     assert run.directory == storage["outputs"] / run.run_id
     assert record["status"] == logged.info.status == "FINISHED"
     assert logged.data.params["manifest_sha256"] == "abc"
     assert logged.data.params["seed"] == "42" and logged.data.params["source"] == "archive"
-    assert logged.data.metrics["tracks"] == 4 and "elapsed_seconds" in logged.data.metrics
-    assert logged.data.tags["atlas.step"] == "probe"
+    assert logged.data.metrics["loaded"] == 3 and logged.data.metrics["recall/Rock"] == 0.5
+    assert {"elapsed_seconds", "cpu_seconds", "peak_rss_mib"} <= set(logged.data.metrics)
+    assert logged.data.tags["mlflow.note.content"] == "A probe."
+
+    (dataset,) = logged.inputs.dataset_inputs
+    assert dataset.dataset.name == "v1/train" and dataset.dataset.digest == "abc"
+    profile = json.loads(dataset.dataset.profile)
+    assert profile["tracks"] == 3 and profile["artists"] == 2 and profile["seed"] == 42
+    assert profile["genre_positives"] == {"International": 2, "Blues": 1}
+    assert "genre_ids" in dataset.dataset.schema
+    assert json.loads((run.directory / "dataset" / "train.json").read_text()) == profile
+    files = {item.path for item in mlflow.artifacts.list_artifacts(run_id=logged.info.run_id)}
+    assert files == {"dataset", "evaluation", "run"}
 
 
-def test_failed_run_stays_distinguishable(storage):
+def test_failed_run_can_be_resumed_as_a_separate_attempt(storage):
     with pytest.raises(ValueError), track("probe", "quick", storage, "v1", "features") as run:
         raise ValueError("broken")
-    record, logged = finished_run(storage, run)
+    record, failed = finished_run(storage, run)
     assert run.directory == storage["artifacts"] / "features" / run.run_id
-    assert record["status"] == logged.info.status == "FAILED"
+    assert record["status"] == failed.info.status == "FAILED"
+    # A step that logged no tracks still names the dataset version it read.
+    (dataset,) = failed.inputs.dataset_inputs
+    assert dataset.dataset.name == "v1/quick-sample"
+
+    with track("probe", "quick", storage, "v1", "features", resume=run.run_id) as again:
+        pass
+    record, resumed = finished_run(storage, again)
+    assert again.directory == run.directory and record["status"] == "FINISHED"
+    assert resumed.data.tags["atlas.resumed_from"] == failed.info.run_id
+    with pytest.raises(ValueError, match="already finished"), \
+            track("probe", "quick", storage, "v1", "features", resume=run.run_id):
+        pass

@@ -50,7 +50,8 @@ def test_sample_is_read_from_shards_once_then_from_its_archive(tmp_path):
     summary = {"version": "v1", "manifest_sha256": digest(ready / "tracks.parquet")}
     (ready / "summary.json").write_text(json.dumps(summary))
     (ready / "labels.json").write_text(json.dumps([
-        {"genre_id": 2, "scored": True}, {"genre_id": 3, "scored": True},
+        {"genre_id": 2, "name": "International", "scored": True},
+        {"genre_id": 3, "name": "Blues", "scored": True},
     ]))
 
     first = run(tmp_path, "v1")
@@ -66,6 +67,7 @@ def test_sample_is_read_from_shards_once_then_from_its_archive(tmp_path):
         assert sorted(tar.getnames()) == ["000/000001.wav", "000/000002.wav"]
     sample = json.loads((target / "sample.json").read_text())
     assert (sample["version"], sample["profile"], sample["seed"]) == ("v1", "quick", 42)
+    assert sample["genre_names"] == {"2": "International", "3": "Blues"}
 
     shard.unlink()  # Local runs need only the sample directory.
     again = run(tmp_path, "v1")

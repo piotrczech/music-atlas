@@ -29,20 +29,32 @@ files. The upload endpoint reads up to the first 30 seconds of a file, with a 32
 
 ### MLflow
 
-MLflow will track run parameters, metrics and files; the runner that logs to it is not yet
-implemented. Start a local server with:
+`music_atlas.tracking.track()` records one step as one MLflow run, and CLI steps expose it as
+`--track`. The run gets the Git revision, profile parameters, elapsed and CPU seconds, peak
+memory and its status (`FINISHED`, `FAILED` or `KILLED`; a resumed run points to the earlier
+attempt). Each subset it reads (`train`, `validation`, `test` or `quick-sample`) is an MLflow
+dataset named `<split>/<subset>`, whose digest is the start of the manifest hash and whose
+profile holds track, artist and per-genre counts; metrics hold only what the step measured.
+MLflow artifacts sit in four folders: `dataset/`, `evaluation/`, `model/` and `run/`. Large
+outputs stay in the run directory (`artifacts/<representation>/<run_id>/` or
+`outputs/<run_id>/`) beside a `run.json` copy of the record. The application reads those
+files and never needs MLflow. Conventions for new steps are in
+`.agents/skills/atlas-tracking/SKILL.md`.
+
+Runs are written to `MLFLOW_TRACKING_URI`, by default the file store `outputs/mlruns`; no
+server runs while they are recorded. MLflow 3.17 refuses file stores unless
+`MLFLOW_ALLOW_FILE_STORE=true`, which the runner and `scripts/mlflow-ui.sh` set. The file
+store is kept because SQLite breaks with concurrent writers on Lustre. View runs with:
 
 ```bash
 uv sync --locked --extra research --extra tracking
-mkdir -p outputs artifacts/mlflow
-uv run mlflow server --host 127.0.0.1 --port 5000 \
-  --backend-store-uri sqlite:///outputs/mlflow.db \
-  --default-artifact-root ./artifacts/mlflow
+scripts/mlflow-ui.sh                                   # outputs/mlruns on 127.0.0.1:5000
+MLFLOW_PORT=5001 MLFLOW_TRACKING_URI=file:/path/to/mlruns scripts/mlflow-ui.sh
 ```
 
-Set `MLFLOW_TRACKING_URI=http://127.0.0.1:5000` in the shell that runs experiments. On WCSS the
-database and artifacts will live on project storage; how local machines reach that server is
-still open. The application uses exported results and never needs a live MLflow server.
+A tracking server (`docker compose --profile tracking`, see
+[Application and checks](#application-and-checks)) also works:
+set `MLFLOW_TRACKING_URI=http://127.0.0.1:5000` in the shell that runs experiments.
 
 ## WCSS
 

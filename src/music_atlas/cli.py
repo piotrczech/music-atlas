@@ -83,10 +83,13 @@ def main():
                 if args.track:
                     from music_atlas.tracking import track
 
-                    with track("quick-sample", "quick", storage, args.version) as record:
-                        result = run(storage["data"], args.version)
-                        record.log(result)
-                    result |= {"run_id": record.run_id, "run_dir": record.directory}
+                    with track(
+                        "quick-sample", "quick", storage, args.version,
+                        description="Load every quick-sample track through the shared loader "
+                        "and time it; the reference throughput for sizing full jobs.",
+                    ) as record:
+                        result = run(storage["data"], args.version, record)
+                    result |={"run_id": record.run_id, "run_dir": record.directory}
                 else:
                     result = run(storage["data"], args.version)
             else:
