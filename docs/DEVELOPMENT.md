@@ -33,8 +33,10 @@ files. The upload endpoint reads up to the first 30 seconds of a file, with a 32
 `--track`. The run gets the Git revision, profile parameters, elapsed and CPU seconds, peak
 memory and its status (`FINISHED`, `FAILED` or `KILLED`; a resumed run points to the earlier
 attempt). Each subset it reads (`train`, `validation`, `test` or `quick-sample`) is an MLflow
-dataset named `<split>/<subset>`, whose digest is the start of the manifest hash and whose
-profile holds track, artist and per-genre counts; metrics hold only what the step measured.
+dataset named `<split>/<subset>`. Its profile holds the manifest hash, a hash of the track
+IDs and track, artist and per-genre counts, and its digest hashes that profile: MLflow keeps
+the first dataset logged under a name and digest, so any change gets a new entry. Metrics
+hold only what the step measured.
 MLflow artifacts sit in four folders: `dataset/`, `evaluation/`, `model/` and `run/`. Large
 outputs stay in the run directory (`artifacts/<representation>/<run_id>/` or
 `outputs/<run_id>/`) beside a `run.json` copy of the record. The application reads those

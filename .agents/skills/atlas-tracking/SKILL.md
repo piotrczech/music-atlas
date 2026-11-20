@@ -42,8 +42,10 @@ seconds, peak RSS, status, and `run/run.json` (+ `run/metadata.json` if present)
 - `subset` is the part read: `train`, `validation`, `test` or `quick-sample`; call
   `log_dataset` once per subset. Its DataFrame needs `track_id`, ideally `artist_id` and
   `genre_ids`. `genres` maps scored genre IDs to names (`labels.json`).
-- Dataset digest = first 16 hex of `manifest_sha256`: two runs with the same digest read
-  the same split file. The version suffix (`fma-cap10-v1-46a8…`) names the split options.
+- Dataset digest = 16 hex of a hash of the whole profile. MLflow keeps the first dataset
+  logged under one name + digest per experiment, so a fixed digest would freeze the first
+  profile. Same digest = same tracks (`tracks_sha256`), same split file (`manifest_sha256`)
+  and same description. The version suffix (`fma-cap10-v1-46a8…`) names the split options.
 - A step that never calls `log_dataset` still gets a dataset entry with the version only.
 - Artifact folders, enforced by `log_file`:
   - `dataset/`: subset summaries, exclusions/rejects, data figures;

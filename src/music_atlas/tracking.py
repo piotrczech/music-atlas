@@ -11,6 +11,7 @@ import warnings
 from collections import Counter
 from contextlib import contextmanager
 from datetime import UTC, datetime
+from hashlib import sha256
 from pathlib import Path
 
 from music_atlas.settings import ROOT, profile
@@ -74,7 +75,12 @@ def usage() -> dict:
 
 
 def dataset_input(dataset: dict, name: str, summary: dict | None = None, tracks=None):
-    """An MLflow dataset whose digest is the manifest hash and whose profile is our summary."""
+    """An MLflow dataset whose profile is our summary.
+
+    MLflow keeps the first dataset logged under a name and digest in an experiment, so the
+    digest hashes the whole summary: other tracks or another description get a new entry.
+    Without a summary it is the manifest hash.
+    """
     from mlflow.data.dataset_source_registry import resolve_dataset_source
     from mlflow.data.meta_dataset import MetaDataset
     from mlflow.data.pandas_dataset import PandasDataset
@@ -89,8 +95,9 @@ def dataset_input(dataset: dict, name: str, summary: dict | None = None, tracks=
         # MLflow 3.17 registers the local source class twice and warns that it is ambiguous.
         warnings.filterwarnings("ignore", "The specified dataset source", UserWarning)
         source = resolve_dataset_source(str(dataset["source"]))
-    # 16 hex digits of the manifest hash tell versions apart; the full hash is a run param.
-    digest = dataset["manifest_sha256"][:16]
+    # 16 hex digits tell entries apart; the full manifest hash is in the profile and params.
+    digest = (sha256(json.dumps(summary, sort_keys=True).encode()).hexdigest()[:16]
+              if summary else dataset["manifest_sha256"][:16])
     if tracks is None:
         return MetaDataset(source, name=name, digest=digest)
     return TrackTable(df=tracks, source=source, name=name, digest=digest)
@@ -126,6 +133,10 @@ class Run:
             "profile": self.profile_name, "subset": subset,
             "dataset_version": self.dataset["version"],
             "manifest_sha256": self.dataset["manifest_sha256"], "tracks": len(tracks),
+            # Identifies the exact track set, which a subset of one manifest cannot.
+            "tracks_sha256": sha256(
+                ",".join(map(str, sorted(tracks["track_id"]))).encode()
+            ).hexdigest(),
         }
         if "artist_id" in tracks:
             profile["artists"] = int(tracks["artist_id"].nunique())

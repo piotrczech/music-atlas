@@ -46,14 +46,24 @@ def test_completed_run_records_dataset_metrics_and_files(storage, tmp_path):
     assert logged.data.tags["mlflow.note.content"] == "A probe."
 
     (dataset,) = logged.inputs.dataset_inputs
-    assert dataset.dataset.name == "v1/train" and dataset.dataset.digest == "abc"
+    assert dataset.dataset.name == "v1/train"
     profile = json.loads(dataset.dataset.profile)
+    assert profile["manifest_sha256"] == "abc" and len(profile["tracks_sha256"]) == 64
     assert profile["tracks"] == 3 and profile["artists"] == 2 and profile["seed"] == 42
     assert profile["genre_positives"] == {"International": 2, "Blues": 1}
     assert "genre_ids" in dataset.dataset.schema
     assert json.loads((run.directory / "dataset" / "train.json").read_text()) == profile
     files = {item.path for item in mlflow.artifacts.list_artifacts(run_id=logged.info.run_id)}
     assert files == {"dataset", "evaluation", "run"}
+
+    # MLflow reuses a dataset with the same name and digest, so a changed description of the
+    # same tracks must get its own digest rather than show the first run's profile.
+    with track("probe", "quick", storage, "v1") as again:
+        again.log_dataset(tracks, "train", {2: "International", 3: "Blues"}, {"seed": 7})
+    _, relogged = finished_run(storage, again)
+    (redataset,) = relogged.inputs.dataset_inputs
+    assert redataset.dataset.digest != dataset.dataset.digest
+    assert json.loads(redataset.dataset.profile)["seed"] == 7
 
 
 def test_failed_run_can_be_resumed_as_a_separate_attempt(storage):
