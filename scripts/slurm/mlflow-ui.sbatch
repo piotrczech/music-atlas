@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 #SBATCH --job-name=atlas-mlflow-ui
-#SBATCH --partition=bem2-cpu-short
+# Lem, not Bem2: the MLflow server loads a cryptography build that needs the newer glibc of
+# AlmaLinux 9 (Lem and the login node, where the venv is synced); Bem2 runs AlmaLinux 8.
+#SBATCH --partition=lem-cpu-short
 #SBATCH --time=01:00:00
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=2G

@@ -40,11 +40,12 @@ elif [[ ${1:-} == --ood ]]; then
   : "${SLURM_JOB_ID:?Run --ood in a job or an OOD session, not on the login node}"
   # OOD proxies /node/<host>/<port>/ to the node with the path kept, as for its Jupyter
   # (base_url /node/${host}/${port}/), so the UI must listen on the node's interfaces under
-  # that prefix. --allowed-hosts refuses requests that did not come through OOD.
+  # that prefix. The proxy sends the node as Host and the browser sends OOD as Origin; MLflow
+  # refuses any other Host, and cross-origin writes from any other Origin.
   host=0.0.0.0
   port=${MLFLOW_PORT:-$(python3 -c 'import socket; s = socket.socket(); s.bind(("", 0)); print(s.getsockname()[1])')}
-  set -- --static-prefix "/node/$(hostname)/$port" --allowed-hosts ood.e-science.pl \
-    --workers 1 "$@"
+  set -- --static-prefix "/node/$(hostname)/$port" --allowed-hosts "$(hostname):$port" \
+    --cors-allowed-origins https://ood.e-science.pl --workers 1 "$@"
   # Jobs use the environment as synced on the login node; nothing is installed here.
   uv_args=(--offline --frozen --no-sync)
   echo "Open https://ood.e-science.pl/node/$(hostname)/$port/ after the SSO login." >&2
