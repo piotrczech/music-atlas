@@ -19,6 +19,9 @@ before editing.
 - Develop and test every data or model step on the quick sample (`atlas quick-sample`, profile
   `quick`) first. Run the `full` profile on WCSS only after the quick run works end to end, and
   size the full job from the quick run's measured throughput (README, *Quick sample first*).
+- Record data and model steps with `music_atlas.tracking.track()` (MLflow plus a run
+  directory with `run.json`) and expose it as `--track` in the CLI; read the `atlas-tracking`
+  skill before adding or comparing tracked runs.
 - Keep unavailable models explicit in API responses and UI. Distinguish measured results
   from examples and exploratory visualisations.
 - For code changes, run Ruff and the relevant Python tests; for frontend changes, run
@@ -39,3 +42,5 @@ generic SLURM advice is often wrong there.
 Optional skills in `.agents/skills/`: `ponytail` for implementation and review,
 `frontend-design` for interface work, `uv-package-manager` for Python environments and
 `wcss-slurm` for WCSS. Their upstream revisions are recorded in `.agents/skills.lock.json`.
+`atlas-tracking` is the project's own skill (no upstream): MLflow conventions for runs, used
+together with `wcss-slurm` for tracked jobs on WCSS.

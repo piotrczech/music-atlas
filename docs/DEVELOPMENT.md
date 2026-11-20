@@ -29,20 +29,89 @@ files. The upload endpoint reads up to the first 30 seconds of a file, with a 32
 
 ### MLflow
 
-MLflow will track run parameters, metrics and files; the runner that logs to it is not yet
-implemented. Start a local server with:
+`music_atlas.tracking.track()` records one step as one MLflow run, and CLI steps expose it as
+`--track`. The run gets the Git revision, profile parameters, elapsed and CPU seconds, peak
+memory and its status (`FINISHED`, `FAILED` or `KILLED`; a resumed run points to the earlier
+attempt). Each subset it reads (`train`, `validation`, `test` or `quick-sample`) is an MLflow
+dataset named `<split>/<subset>`. Its profile holds the manifest hash, a hash of the track
+IDs and track, artist and per-genre counts, and its digest hashes that profile: MLflow keeps
+the first dataset logged under a name and digest, so any change gets a new entry. Metrics
+hold only what the step measured.
+MLflow artifacts sit in four folders: `dataset/`, `evaluation/`, `model/` and `run/`. Large
+outputs stay in the run directory (`artifacts/<representation>/<run_id>/` or
+`outputs/<run_id>/`) beside a `run.json` copy of the record. The application reads those
+files and never needs MLflow. Conventions for new steps are in
+`.agents/skills/atlas-tracking/SKILL.md`.
+
+Runs are written to `MLFLOW_TRACKING_URI`, by default the file store `outputs/mlruns`; no
+server runs while they are recorded. MLflow 3.17 refuses file stores unless
+`MLFLOW_ALLOW_FILE_STORE=true`, which the runner and `scripts/mlflow-ui.sh` set. The file
+store is kept because SQLite breaks with concurrent writers on Lustre. View runs with:
 
 ```bash
 uv sync --locked --extra research --extra tracking
-mkdir -p outputs artifacts/mlflow
-uv run mlflow server --host 127.0.0.1 --port 5000 \
-  --backend-store-uri sqlite:///outputs/mlflow.db \
-  --default-artifact-root ./artifacts/mlflow
+scripts/mlflow-ui.sh                                   # outputs/mlruns on 127.0.0.1:5000
+scripts/mlflow-ui.sh --wcss                            # copy the WCSS runs first
+MLFLOW_PORT=5001 MLFLOW_TRACKING_URI=file:/path/to/mlruns scripts/mlflow-ui.sh
 ```
 
-Set `MLFLOW_TRACKING_URI=http://127.0.0.1:5000` in the shell that runs experiments. On WCSS the
-database and artifacts will live on project storage; how local machines reach that server is
-still open. The application uses exported results and never needs a live MLflow server.
+On WCSS, `~/.atlas-env.sh` sets `MLFLOW_TRACKING_URI=file:$ATLAS_OUTPUTS_DIR/mlruns`, so
+`sbatch scripts/slurm/quick-sample.sbatch --track` logs to PD while the job runs.
+`--wcss` mirrors that store into `outputs/mlruns-wcss` with `rsync` and points its artifact
+paths at the copy, which costs no grant hours. It connects to the SSH alias `wcss` (the
+`wcss-slurm` skill's configuration) unless `ATLAS_WCSS_HOST` names another.
+
+To read the PD store in place, open a Jupyter session on `lem-cpu-interactive` ([Notebooks on
+Open OnDemand](#notebooks-on-open-ondemand)) and run in its terminal:
+
+```bash
+source ~/.atlas-env.sh && cd ~/music-atlas && scripts/mlflow-ui.sh --ood
+```
+
+Open the printed `https://ood.e-science.pl/node/<node>/<port>/` link once the terminal shows
+`Uvicorn running`; before that OOD answers "Failed to connect". The UI opens in GenAI mode:
+switch to *Model training* to see runs. `sbatch scripts/slurm/mlflow-ui.sbatch` starts the
+same server as a job and prints the link in its log. Use Lem, not Bem2: the UI's
+`cryptography` build needs AlmaLinux 9. Stop the server and delete the session when finished.
+
+**Comparing runs.** In the UI, tick runs of one experiment and choose *Compare*; compare only
+runs whose dataset digest matches, since the digest changes with the tracks read. The same
+query from Python (for notebooks and agents):
+
+```python
+import mlflow  # with MLFLOW_ALLOW_FILE_STORE=true
+
+mlflow.set_tracking_uri("file:outputs/mlruns-wcss")  # or file:outputs/mlruns
+runs = mlflow.search_runs(
+    experiment_names=["music-atlas-quick"],
+    filter_string="tags.`atlas.step` = 'quick-sample' and attributes.status = 'FINISHED'",
+    order_by=["metrics.tracks_per_second DESC"],
+)
+```
+
+**Results without MLflow.** MLflow is the lab notebook, not a dependency of the results. A
+run directory holds everything the next step or the application needs: `run.json` (status,
+params, metrics, dataset profile names), `metadata.json`, and for representations
+`vectors.npy` with aligned `track_ids.npy`. Read only directories whose `run.json` says
+`FINISHED`; a resumed run keeps its directory and its last attempt's status.
+
+```python
+import json
+from pathlib import Path
+
+import numpy as np
+
+run = Path("artifacts/acoustic/RUN_ID")
+assert json.loads((run / "run.json").read_text())["status"] == "FINISHED"
+vectors, track_ids = np.load(run / "vectors.npy"), np.load(run / "track_ids.npy")
+```
+
+The application is pointed at such directories (exported models and indexes) and never
+queries MLflow, so it runs with no tracking server or store.
+
+A tracking server (`docker compose --profile tracking`, see
+[Application and checks](#application-and-checks)) also works:
+set `MLFLOW_TRACKING_URI=http://127.0.0.1:5000` in the shell that runs experiments.
 
 ## WCSS
 
@@ -60,7 +129,7 @@ mkdir -p "$ATLAS_STORAGE"/{data,artifacts,outputs}
 ln -s "$ATLAS_DATA_DIR" data
 ln -s "$ATLAS_ARTIFACTS_DIR" artifacts
 ln -s "$ATLAS_OUTPUTS_DIR" outputs
-uv sync --locked --extra research --extra notebook
+uv sync --locked --extra research --extra notebook --extra tracking
 ```
 
 Source `~/.atlas-env.sh` after every login. It stays outside Git and sets `SBATCH_ACCOUNT`

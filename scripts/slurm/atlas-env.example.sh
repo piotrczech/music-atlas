@@ -14,6 +14,11 @@ export ATLAS_OUTPUTS_DIR=$ATLAS_STORAGE/outputs
 export UV_CACHE_DIR=$ATLAS_ARTIFACTS_DIR/uv-cache
 export HF_HOME=$ATLAS_ARTIFACTS_DIR/hf-cache
 export UV_PROJECT_ENVIRONMENT=$ATLAS_ARTIFACTS_DIR/venv-$USER
+# Jobs log `--track` runs to a file store on PD; no MLflow server runs (E2-01). SQLite would
+# break with concurrent writers on Lustre, and MLflow 3.17 needs the opt-in for file stores.
+# Not under artifacts/: MLflow rejects runs whose path has a folder named `artifacts`.
+export MLFLOW_TRACKING_URI=file:$ATLAS_OUTPUTS_DIR/mlruns
+export MLFLOW_ALLOW_FILE_STORE=true
 export PATH=$HOME/.local/bin:$PATH
 
 # Packages installed with `pip install --user` would shadow the project environment.

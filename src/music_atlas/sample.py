@@ -60,6 +60,7 @@ def build(data_dir: Path, ready: Path, target: Path, settings: dict, seed: int, 
         raise ValueError(f"Manifest hash mismatch: {ready}.")
     labels = json.loads((ready / "labels.json").read_text(encoding="utf-8"))
     genres = [label["genre_id"] for label in labels if label["scored"]]
+    names = {str(label["genre_id"]): label["name"] for label in labels if label["scored"]}
     chosen = select(pd.read_parquet(ready / "train.parquet"), genres, seed, limit)
 
     errors = {}
@@ -90,7 +91,7 @@ def build(data_dir: Path, ready: Path, target: Path, settings: dict, seed: int, 
         sample = {
             "version": summary["version"], "manifest_sha256": summary["manifest_sha256"],
             "profile": "quick", "seed": seed, "settings": settings, "scored_genres": genres,
-            "tracks": tracks,
+            "genre_names": names, "tracks": tracks,
         }
         (stage / "sample.json").write_text(json.dumps(sample, indent=2) + "\n", encoding="utf-8")
         rejects = pd.DataFrame({"track_id": list(errors), "error": list(errors.values())})
@@ -99,8 +100,12 @@ def build(data_dir: Path, ready: Path, target: Path, settings: dict, seed: int, 
     return sample, errors
 
 
-def run(data_dir: Path, version: str | None = None) -> dict:
-    """Build the sample on first use, otherwise reload it from audio.tar; time the loader."""
+def run(data_dir: Path, version: str | None = None, record=None) -> dict:
+    """Build the sample on first use, otherwise reload it from audio.tar; time the loader.
+
+    With `record` (a `music_atlas.tracking.Run`), the sample is logged as the run's dataset
+    and the loader's outcome and timing as its metrics.
+    """
     quick = profile("quick")
     version = version or quick["dataset"]["split"]
     settings = {key: quick[key] for key in ("sample_rate", "window_seconds", "windows_per_track")}
@@ -135,11 +140,27 @@ def run(data_dir: Path, version: str | None = None) -> dict:
         # ru_maxrss is in bytes on macOS and in KiB on Linux.
         scale = 2**20 if sys.platform == "darwin" else 2**10
         peak = round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / scale)
-    return {
-        "sample": str(target), "version": sample["version"], "source": source,
-        "tracks": len(tracks), "loaded": len(tracks) - len(errors), "rejected": len(errors),
-        "artists": len({track["artist_id"] for track in tracks}),
+    described = {
+        "tracks": len(tracks), "artists": len({track["artist_id"] for track in tracks}),
         "scored_genres_covered": len(tagged & set(sample["scored_genres"])),
-        "seconds": round(seconds, 1), "tracks_per_second": round(len(tracks) / seconds, 2),
-        "peak_rss_mib": peak, "archive_mib": round((target / "audio.tar").stat().st_size / 2**20),
+        "archive_mib": round((target / "audio.tar").stat().st_size / 2**20),
     }
+    measured = {
+        "loaded": len(tracks) - len(errors), "rejected": len(errors),
+        "seconds": round(seconds, 1), "tracks_per_second": round(len(tracks) / seconds, 2),
+        "peak_rss_mib": peak,
+    }
+    if record is not None:
+        # Samples built before genre names were stored fall back to the genre IDs.
+        names = sample.get("genre_names", {})
+        genres = {genre: names.get(str(genre), str(genre)) for genre in sample["scored_genres"]}
+        record.log_dataset(
+            pd.DataFrame(tracks), "quick-sample", genres,
+            {"seed": sample["seed"], "settings": sample["settings"], "source": source,
+             "scored_genres_covered": described["scored_genres_covered"],
+             "archive_mib": described["archive_mib"]},
+        )
+        record.log_file(target / "rejects.csv", "dataset")
+        record.log(measured)
+    return {"sample": str(target), "version": sample["version"], "source": source,
+            **described, **measured}

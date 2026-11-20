@@ -37,7 +37,7 @@ the rules and formats.
 Processing and training run on [WCSS](https://man.e-science.pl/pl/kdm/bem2) with
 **4,000 CPU hours, 300 GPU hours and 2 TB of storage**. Local development uses uv and a
 128-track sample; the same code runs on WCSS with the full profile. Data, caches and artifacts
-live outside Git, and MLflow will record configurations, metrics and artifacts.
+live outside Git, and MLflow records configurations, metrics and artifacts of each run.
 
 ## Application
 
@@ -85,6 +85,20 @@ uv run --extra research atlas quick-sample   # checks that all 128 tracks load
 3. **Full, on WCSS:** run the `full` profile on `ready/<version>/` from the shards, reading
    shard by shard.
 
+### Tracking runs
+
+A step started with `--track` is recorded in MLflow: Git revision, profile, the dataset it read
+(version, manifest hash, track and genre counts), timing and metrics. Its files go to a run directory with a `run.json`
+copy of the record, so results stay readable without MLflow. Runs land in `outputs/mlruns`
+unless `MLFLOW_TRACKING_URI` points elsewhere; no server has to run while they are recorded.
+
+```bash
+uv sync --locked --extra research --extra tracking
+uv run atlas quick-sample --track
+scripts/mlflow-ui.sh   # http://127.0.0.1:5000; MLFLOW_PORT and MLFLOW_TRACKING_URI override it
+scripts/mlflow-ui.sh --wcss   # copy the runs logged by WCSS jobs from PD first
+```
+
 ### Commands
 
 The data commands need `uv sync --locked --extra research` and run on WCSS as jobs through
@@ -97,7 +111,7 @@ The data commands need `uv sync --locked --extra research` and run on WCSS as jo
 | `atlas fma-download [--probe] [--limit N]` | Stream FMA-full into verified tar shards and write the inventory |
 | `atlas fma-audit [--limit N]` | Decode every track and write the audio audit |
 | `atlas fma-split --audit FILE [--max-artist-share 0.1] [--strategy rare-support] [--publish]` | Build a versioned train/validation/test split; `--publish` makes it the shared manifest |
-| `atlas quick-sample [VERSION]` | Build the 128-track quick sample of the primary benchmark, or reload it from `audio.tar` and time the loader |
+| `atlas quick-sample [VERSION] [--track]` | Build the 128-track quick sample of the primary benchmark, or reload it from `audio.tar` and time the loader; `--track` records the run in MLflow |
 | `atlas fma-record-filter VERSION REPRESENTATION RUN_ID exclusions.csv` | Record the tracks a representation run could not use |
 | `uv run ruff check .`, `uv run pytest` | Lint and test; `npm run typecheck` and `npm run build` in `web/` |
 

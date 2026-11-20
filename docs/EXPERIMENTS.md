@@ -92,7 +92,7 @@ distinct groups. Keep its results apart from the primary metrics.
 `atlas quick-sample` fixes the quick profile's input: up to `max_tracks` valid training tracks
 of the profile's dataset version in its seeded order, taking the scored genres in turn and
 preferring artists not yet sampled. `samples/<version>/` holds `sample.json` (dataset version,
-manifest hash, seed, profile and tracks), `rejects.csv` (`track_id,error` for
+manifest hash, seed, profile, scored genres with their names and tracks), `rejects.csv` (`track_id,error` for
 `atlas fma-record-filter`) and `audio.tar` with the accepted MP3s. The first run reads them from
 the shards in place; later runs, including local ones, read only `audio.tar` and stop if the
 version's manifest hash has changed.
@@ -171,7 +171,8 @@ factor at a time on the same split and metrics.
 ## Tracking and resources
 
 Record the Git revision, seed, library versions, manifest hash, configuration, sample counts,
-hardware, runtime, CPU/GPU hours, RAM/VRAM and metrics for each run in MLflow, and write
-reports and figures to `outputs/<run_id>/`. Start with the 128-track quick sample and use its
+hardware, runtime, CPU/GPU hours, RAM/VRAM and metrics for each run in MLflow through
+`music_atlas.tracking` ([DEVELOPMENT.md](DEVELOPMENT.md#mlflow)), and write its files to the
+run directory: `artifacts/<representation>/<run_id>/` or `outputs/<run_id>/`. Start with the 128-track quick sample and use its
 throughput to schedule full runs, keeping about 20% of the 4,000 CPU-hour and 300 GPU-hour
 allocations for reruns and integration.

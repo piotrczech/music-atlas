@@ -53,6 +53,7 @@ def main():
         "quick-sample", help="Build or reload the quick-profile sample and time the loader.",
     )
     sample.add_argument("version", nargs="?", help="Dataset version; the profile's by default.")
+    sample.add_argument("--track", action="store_true", help="Record the run in MLflow.")
     args = parser.parse_args()
     if args.command == "doctor":
         result = {"paths": paths(), "profile": profile(args.profile)}
@@ -79,7 +80,18 @@ def main():
             elif args.command == "quick-sample":
                 from music_atlas.sample import run
 
-                result = run(storage["data"], args.version)
+                if args.track:
+                    from music_atlas.tracking import track
+
+                    with track(
+                        "quick-sample", "quick", storage, args.version,
+                        description="Load every quick-sample track through the shared loader "
+                        "and time it; the reference throughput for sizing full jobs.",
+                    ) as record:
+                        result = run(storage["data"], args.version, record)
+                    result |={"run_id": record.run_id, "run_dir": record.directory}
+                else:
+                    result = run(storage["data"], args.version)
             else:
                 from music_atlas.split_views import record_filter
 
@@ -88,7 +100,9 @@ def main():
                     args.representation, args.run_id, args.exclusions,
                 )
         except ImportError as error:
-            parser.exit(1, f"{error}. Install with uv sync --locked --extra research.\n")
+            parser.exit(
+                1, f"{error}. Install with uv sync --locked --extra research --extra tracking.\n",
+            )
         except (OSError, ValueError, KeyError) as error:
             parser.exit(1, f"{error}\n")
     elif args.command == "demo":
