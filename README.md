@@ -96,6 +96,7 @@ unless `MLFLOW_TRACKING_URI` points elsewhere; no server has to run while they a
 uv sync --locked --extra research --extra tracking
 uv run atlas quick-sample --track
 scripts/mlflow-ui.sh   # http://127.0.0.1:5000; MLFLOW_PORT and MLFLOW_TRACKING_URI override it
+scripts/mlflow-ui.sh --wcss   # copy the runs logged by WCSS jobs from PD first
 ```
 
 ### Commands

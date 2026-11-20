@@ -51,8 +51,50 @@ store is kept because SQLite breaks with concurrent writers on Lustre. View runs
 ```bash
 uv sync --locked --extra research --extra tracking
 scripts/mlflow-ui.sh                                   # outputs/mlruns on 127.0.0.1:5000
+scripts/mlflow-ui.sh --wcss                            # copy the WCSS runs first
 MLFLOW_PORT=5001 MLFLOW_TRACKING_URI=file:/path/to/mlruns scripts/mlflow-ui.sh
 ```
+
+On WCSS, `~/.atlas-env.sh` sets `MLFLOW_TRACKING_URI=file:$ATLAS_OUTPUTS_DIR/mlruns`, so
+`sbatch scripts/slurm/quick-sample.sbatch --track` logs to PD while the job runs.
+`--wcss` mirrors that store into `outputs/mlruns-wcss` with `rsync` and points its artifact
+paths at the copy, which costs no grant hours. It connects to the SSH alias `wcss` (the
+`wcss-slurm` skill's configuration) unless `ATLAS_WCSS_HOST` names another.
+
+**Comparing runs.** In the UI, tick runs of one experiment and choose *Compare*; compare only
+runs whose dataset digest matches, since the digest changes with the tracks read. The same
+query from Python (for notebooks and agents):
+
+```python
+import mlflow  # with MLFLOW_ALLOW_FILE_STORE=true
+
+mlflow.set_tracking_uri("file:outputs/mlruns-wcss")  # or file:outputs/mlruns
+runs = mlflow.search_runs(
+    experiment_names=["music-atlas-quick"],
+    filter_string="tags.`atlas.step` = 'quick-sample' and attributes.status = 'FINISHED'",
+    order_by=["metrics.tracks_per_second DESC"],
+)
+```
+
+**Results without MLflow.** MLflow is the lab notebook, not a dependency of the results. A
+run directory holds everything the next step or the application needs: `run.json` (status,
+params, metrics, dataset profile names), `metadata.json`, and for representations
+`vectors.npy` with aligned `track_ids.npy`. Read only directories whose `run.json` says
+`FINISHED`; a resumed run keeps its directory and its last attempt's status.
+
+```python
+import json
+from pathlib import Path
+
+import numpy as np
+
+run = Path("artifacts/acoustic/RUN_ID")
+assert json.loads((run / "run.json").read_text())["status"] == "FINISHED"
+vectors, track_ids = np.load(run / "vectors.npy"), np.load(run / "track_ids.npy")
+```
+
+The application is pointed at such directories (exported models and indexes) and never
+queries MLflow, so it runs with no tracking server or store.
 
 A tracking server (`docker compose --profile tracking`, see
 [Application and checks](#application-and-checks)) also works:
@@ -74,7 +116,7 @@ mkdir -p "$ATLAS_STORAGE"/{data,artifacts,outputs}
 ln -s "$ATLAS_DATA_DIR" data
 ln -s "$ATLAS_ARTIFACTS_DIR" artifacts
 ln -s "$ATLAS_OUTPUTS_DIR" outputs
-uv sync --locked --extra research --extra notebook
+uv sync --locked --extra research --extra notebook --extra tracking
 ```
 
 Source `~/.atlas-env.sh` after every login. It stays outside Git and sets `SBATCH_ACCOUNT`

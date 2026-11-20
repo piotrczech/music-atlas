@@ -32,8 +32,10 @@ size, package and owner.
    `track_ids.npy` and `metadata.json` (`docs/EXPERIMENTS.md`). If a track still fails in one
    representation, which should be rare, record it with `atlas fma-record-filter`; the split
    never changes.
-3. Record runs through the E2-01 runner and MLflow conventions once they exist; until then,
-   keep the same fields in `metadata.json`.
+3. Record runs with `music_atlas.tracking.track()` and a `--track` flag (E2-01; the
+   `atlas-tracking` skill). Each task's *Tracking* section says what it logs where. On WCSS,
+   add the `tracking` extra to your environment and the MLflow lines of
+   `scripts/slurm/atlas-env.example.sh` to `~/.atlas-env.sh` once.
 4. Fit any preprocessing on train only; select on validation; leave test untouched.
 
 ## E2. Representations · weeks 3–4

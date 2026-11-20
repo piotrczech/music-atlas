@@ -3,7 +3,7 @@ import json
 import pandas as pd
 import pytest
 
-from music_atlas.tracking import track
+from music_atlas.tracking import track, tracking_uri
 
 mlflow = pytest.importorskip("mlflow")
 
@@ -64,6 +64,12 @@ def test_completed_run_records_dataset_metrics_and_files(storage, tmp_path):
     (redataset,) = relogged.inputs.dataset_inputs
     assert redataset.dataset.digest != dataset.dataset.digest
     assert json.loads(redataset.dataset.profile)["seed"] == 7
+
+
+def test_store_under_an_artifacts_folder_is_refused(storage, monkeypatch, tmp_path):
+    monkeypatch.setenv("MLFLOW_TRACKING_URI", f"file:{tmp_path / 'artifacts' / 'mlruns'}")
+    with pytest.raises(ValueError, match="artifacts folder"):
+        tracking_uri(storage["outputs"])
 
 
 def test_failed_run_can_be_resumed_as_a_separate_attempt(storage):

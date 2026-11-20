@@ -75,7 +75,8 @@ seconds, peak RSS, status, and `run/run.json` (+ `run/metadata.json` if present)
   Use the file store, never SQLite on Lustre. MLflow 3.17 needs
   `MLFLOW_ALLOW_FILE_STORE=true` for it; `tracking.py` and the script set it.
 - UI: `scripts/mlflow-ui.sh` (overrides: `MLFLOW_TRACKING_URI`, `MLFLOW_PORT`,
-  `MLFLOW_HOST`, extra args go to `mlflow ui`).
+  `MLFLOW_HOST`, extra args go to `mlflow ui`). `--wcss` first mirrors the PD store into
+  `outputs/mlruns-wcss` and rewrites its absolute artifact paths; query that copy too.
 - Prefer querying over opening the UI when an agent needs numbers:
 
 ```python
@@ -90,7 +91,13 @@ mlflow.search_runs(experiment_names=["music-atlas-quick"],
 
 ## WCSS
 
-Read `wcss-slurm` for jobs, partitions, storage and costs. Agreed in E2-01, not yet set up or
-verified on WCSS: `~/.atlas-env.sh` sets `MLFLOW_TRACKING_URI=file:$ATLAS_ARTIFACTS_DIR/mlruns`
-on PD; jobs log while they run and no server is kept up. View runs in an OOD session or after
-`rsync` of `mlruns/` to a laptop (no grant hours); a copied store keeps PD paths for artifacts.
+Read `wcss-slurm` for jobs, partitions, storage and costs. Project specifics:
+
+- `~/.atlas-env.sh` sets `MLFLOW_TRACKING_URI=file:$ATLAS_OUTPUTS_DIR/mlruns` and
+  `MLFLOW_ALLOW_FILE_STORE=true`; each member adds them to their own copy. The venv needs
+  the `tracking` extra: `uv sync --locked --extra research --extra notebook --extra tracking`
+  (list every extra you use; `uv sync` drops the rest).
+- Jobs log while they run; no server is kept up: `sbatch scripts/slurm/<step>.sbatch --track`.
+- View: `scripts/mlflow-ui.sh --wcss` on a laptop (no grant hours).
+- Throughput of a step that reads scattered tracks from shards (building the quick sample:
+  0.08 tracks/s) is dominated by opening shards; size full jobs from shard-by-shard reads.

@@ -59,6 +59,10 @@ def tracking_uri(outputs_dir: Path) -> str:
     if uri.startswith("file:"):
         # MLflow 3.17 refuses the file store unless opted in; SQLite breaks on Lustre (E2-01).
         os.environ.setdefault("MLFLOW_ALLOW_FILE_STORE", "true")
+        # Its path-traversal check drops every run below a folder named `artifacts`, so the
+        # run vanishes right after it is created ("Run ... not found").
+        if "artifacts" in Path(uri.removeprefix("file:")).resolve().parts:
+            raise ValueError(f"MLflow cannot keep runs under an artifacts folder: {uri}.")
     return uri
 
 
