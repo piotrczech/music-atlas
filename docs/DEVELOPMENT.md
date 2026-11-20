@@ -61,6 +61,19 @@ On WCSS, `~/.atlas-env.sh` sets `MLFLOW_TRACKING_URI=file:$ATLAS_OUTPUTS_DIR/mlr
 paths at the copy, which costs no grant hours. It connects to the SSH alias `wcss` (the
 `wcss-slurm` skill's configuration) unless `ATLAS_WCSS_HOST` names another.
 
+To read the PD store in place, open a Jupyter session on `lem-cpu-interactive` ([Notebooks on
+Open OnDemand](#notebooks-on-open-ondemand)) and run in its terminal:
+
+```bash
+source ~/.atlas-env.sh && cd ~/music-atlas && scripts/mlflow-ui.sh --ood
+```
+
+Open the printed `https://ood.e-science.pl/node/<node>/<port>/` link once the terminal shows
+`Uvicorn running`; before that OOD answers "Failed to connect". The UI opens in GenAI mode:
+switch to *Model training* to see runs. `sbatch scripts/slurm/mlflow-ui.sbatch` starts the
+same server as a job and prints the link in its log. Use Lem, not Bem2: the UI's
+`cryptography` build needs AlmaLinux 9. Stop the server and delete the session when finished.
+
 **Comparing runs.** In the UI, tick runs of one experiment and choose *Compare*; compare only
 runs whose dataset digest matches, since the digest changes with the tracks read. The same
 query from Python (for notebooks and agents):

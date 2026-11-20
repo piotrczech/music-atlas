@@ -98,6 +98,11 @@ Read `wcss-slurm` for jobs, partitions, storage and costs. Project specifics:
   the `tracking` extra: `uv sync --locked --extra research --extra notebook --extra tracking`
   (list every extra you use; `uv sync` drops the rest).
 - Jobs log while they run; no server is kept up: `sbatch scripts/slurm/<step>.sbatch --track`.
-- View: `scripts/mlflow-ui.sh --wcss` on a laptop (no grant hours).
+- View: `scripts/mlflow-ui.sh --wcss` on a laptop (no grant hours). On the cluster,
+  `scripts/mlflow-ui.sh --ood` in an OOD Jupyter terminal (`lem-cpu-interactive`) serves the PD
+  store at the printed `ood.e-science.pl/node/...` link once Uvicorn reports it is running;
+  `scripts/slurm/mlflow-ui.sbatch` does the same as a job. Lem only: the UI's `cryptography`
+  needs AlmaLinux 9 and Bem2 runs 8. The OOD proxy sends the node as Host, which the script
+  allows; the UI opens in GenAI mode, so switch to *Model training* to see runs.
 - Throughput of a step that reads scattered tracks from shards (building the quick sample:
   0.08 tracks/s) is dominated by opening shards; size full jobs from shard-by-shard reads.
