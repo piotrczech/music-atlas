@@ -63,7 +63,9 @@ def log_mel(samples: np.ndarray) -> np.ndarray:
     window = get_window("hann", N_FFT).astype(np.float32)
     power = np.abs(np.fft.rfft(frames * window, axis=1)) ** 2
     mel = mel_filters() @ power.T
-    return (10 * np.log10(np.maximum(mel, AMIN) / REFERENCE)).astype(np.float32)
+    # float32 log10 differs by an ulp between CPUs (AVX-512 gives -100.00001 at the floor);
+    # float64 errors vanish in the cast, so the floor and padding are exactly FLOOR_DB everywhere.
+    return (10 * np.log10(np.maximum(mel.astype(np.float64), AMIN) / REFERENCE)).astype(np.float32)
 
 
 def valid_frames(window: Window) -> int:
