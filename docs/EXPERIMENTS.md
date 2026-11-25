@@ -155,34 +155,23 @@ rejects for its ID3 tag is read from its first frame.
 
 ### Log-mel spectrograms
 
-`music_atlas.logmel` turns a 22,050 Hz window into 128 mel bands (Slaney scale and area
-normalisation, 0–11,025 Hz) of a 2,048-point Hann FFT with a 512-sample hop: 431 frames per
-10 s window, laid out as `(windows, 1, n_mels, frames)` float32. Power is in dB relative to a
-full-scale signal, not to each recording's peak, so a quiet track stays quiet; power below
-10⁻¹⁰ is clipped to −100 dB. Zero padding of a short track therefore sits exactly at the floor,
-like digital silence, and each window keeps its number of decoded frames (`valid_frames`) for
-masking or cropping. The transform needs only numpy and scipy, so the API applies it to an
-upload without the research extra; a test keeps it within 0.02 dB of librosa.
+`music_atlas.logmel` turns a 22,050 Hz window into 128 Slaney mel bands (0–11,025 Hz) of a
+2,048-point Hann FFT with a 512-sample hop: `(windows, 1, 128, 431)` float32 for 10 s windows
+(`logmel.PARAMETERS`). Power is in dB relative to full scale, not to each recording's peak, and
+clipped at −100 dB, so zero padding and digital silence sit at the floor; `valid_frames` counts
+the decoded frames of each window. It needs only numpy and scipy, so serving can apply the
+same transform without the research extra.
 
-`atlas log-mel` caches the profile's windows for CNN training in
-`artifacts/logmel/<run_id>/`: one `parts/<shard>.npy` per tar shard (windows × 128 × 431,
-float16 dB), `index.parquet` (part, row, track, split, window, start, `valid_frames`, mean
-level and share at the floor of the decoded frames), `rejects.csv`, `filter.parquet`,
-`examples.png` and `metadata.json` with the transform parameters and the per-band mean and
-standard deviation of the training frames, padding excluded. `music_atlas.logmel.normalise`
-applies them; `music_atlas.logmel_cache.read` memory-maps the parts.
+`atlas log-mel` caches the windows in `artifacts/logmel/<run_id>/`: `parts/<shard>.npy`
+(float16 dB), `index.parquet` (one row per window: part, row, track, split, window,
+`valid_frames`, `mean_db`, `floor_share`), `metadata.json` (parameters, counts and the per-band
+mean and std of training frames), `rejects.csv`, `filter.parquet` and `examples.png`. Read it
+with `logmel_cache.read` and standardise with `logmel.normalise`. Windows with `floor_share`
+≥ `SILENT_SHARE` are digital silence (about 0.2%): skip them in training and aggregation
+rather than dropping tracks.
 
-Decoding a window costs about nine times its transform (0.082 s against 0.009 s on Bem2) and
-training reads every window once per epoch, so the cache pays off from the second epoch; the
-API computes a single upload on demand.
-
-In the full profile 610 of 317,797 windows (0.19%) are digital silence, with at least 99% of
-their frames at the floor: 482 end windows of tracks that end in 10 s or more of silence, 80 start
-windows and 48 middle ones. They come from 556 tracks whose other windows hold music, so the
-audit, which judges a whole track, rightly keeps them; only track 112068, a two-hour training
-file, is silent in all three windows. A silent window carries no genre, so CNN training and
-per-track averaging should skip windows with `floor_share` ≥ 0.99 (`SILENT_SHARE`) instead of
-dropping tracks or changing the split.
+`--windows 5` caches 50 s per track instead of 30 s; windows 0, 2 and 4 are the default three,
+so one cache serves both variants.
 
 ## Comparisons
 
@@ -204,6 +193,6 @@ factor at a time on the same split and metrics.
 Record the Git revision, seed, library versions, manifest hash, configuration, sample counts,
 hardware, runtime, CPU/GPU hours, RAM/VRAM and metrics for each run in MLflow through
 `music_atlas.tracking` ([DEVELOPMENT.md](DEVELOPMENT.md#mlflow)), and write its files to the
-run directory: `artifacts/<representation>/<run_id>/` or `outputs/<run_id>/`. Start with the 128-track quick sample and use its
-throughput to schedule full runs, keeping about 20% of the 4,000 CPU-hour and 300 GPU-hour
+run directory: `artifacts/<representation>/<run_id>/` or `outputs/<run_id>/`. Start with the
+128-track quick sample and use its throughput to schedule full runs, keeping about 20% of the 4,000 CPU-hour and 300 GPU-hour
 allocations for reruns and integration.
