@@ -145,8 +145,10 @@ compare directly with the FMA baselines. Report ours as our own protocol.
 Representations are stored under `artifacts/<representation>/<run_id>/` as `vectors.npy`
 with shape `(n_tracks, d)`, aligned `track_ids.npy` and `metadata.json` (manifest and
 configuration hashes, extractor or checkpoint version, sample rate, window selection,
-aggregation and normalisation). Export fitted scalers and class mappings with the model;
-queries use the same settings.
+aggregation and normalisation). `music_atlas.representation.extract` also keeps every window
+as `window_vectors.npy` with `windows.parquet` (track, window, start), so another aggregation
+needs no second extraction. Export fitted scalers and class mappings with the model; queries
+use the same settings.
 
 `music_atlas.loader` cuts deterministic 10-second windows: three per track (beginning, middle,
 end) in the full profile and one centred window in the quick profile. Windows overlap in short

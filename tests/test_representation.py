@@ -7,15 +7,10 @@ import pandas as pd
 import pytest
 import soundfile as sf
 
-from music_atlas.representation import extract, read_tracks
+from music_atlas.representation import extract
+from music_atlas.settings import profile
 
-SETTINGS = {"sample_rate": 16000, "window_seconds": 1, "windows_per_track": 3}
-
-
-def add(tar, name, data):
-    member = tarfile.TarInfo(name)
-    member.size = len(data)
-    tar.addfile(member, io.BytesIO(data))
+VERSION = profile("quick")["dataset"]["split"]
 
 
 def wav(seconds, level):
@@ -31,62 +26,50 @@ def level(samples):
 
 @pytest.fixture
 def data_dir(tmp_path):
-    for shard, tracks in {"a": {3: 0.25, 1: 0.5}, "b": {2: 0.1}}.items():
-        with tarfile.open(tmp_path / f"{shard}.tar", "w") as tar:
-            for track_id, value in tracks.items():
-                add(tar, f"{track_id}.wav", wav(5, value))
-            add(tar, "9.wav", b"not audio")
+    """A quick sample of three readable tracks and one that cannot be decoded."""
+    sample = tmp_path / "samples" / VERSION
+    sample.mkdir(parents=True)
+    files = {3: wav(30, 0.25), 1: wav(30, 0.5), 2: wav(5, 0.1), 9: b"not audio"}
+    with tarfile.open(sample / "audio.tar", "w") as tar:
+        for track_id, data in files.items():
+            member = tarfile.TarInfo(f"{track_id}.wav")
+            member.size = len(data)
+            tar.addfile(member, io.BytesIO(data))
+    tracks = [{"track_id": track_id, "artist_id": track_id, "genre_ids": [2],
+               "audio_path": f"{track_id}.wav"} for track_id in files]
+    pinned = {"version": f"{VERSION}-abc", "manifest_sha256": "abc", "scored_genres": [2],
+              "tracks": tracks}
+    (sample / "sample.json").write_text(json.dumps(pinned), encoding="utf-8")
+    (sample / "rejects.csv").write_text("track_id,error\n", encoding="utf-8")
     return tmp_path
 
 
-def subsets():
-    rows = [(1, "a.tar"), (2, "b.tar"), (3, "a.tar"), (9, "b.tar")]
-    tracks = pd.DataFrame(rows, columns=["track_id", "shard"])
-    tracks["audio_path"] = tracks["track_id"].map("{}.wav".format)
-    return {"train": tracks.iloc[:3], "test": tracks.iloc[3:]}
-
-
-def test_tracks_of_all_subsets_become_aligned_vectors_and_failures(data_dir, tmp_path):
+def test_tracks_become_aligned_mean_vectors_with_every_window_kept(data_dir, tmp_path):
     out = tmp_path / "run"
-    result = extract(data_dir, subsets(), out, level, SETTINGS, {"encoder": "level"})
+    result = extract(data_dir, out, level, 16000, {"encoder": "level"}, windows_per_track=3)
 
     assert result["encoded"] == 3 and result["failed"] == 1
     assert np.load(out / "track_ids.npy").tolist() == [1, 2, 3]
-    np.testing.assert_allclose(np.load(out / "vectors.npy")[:, 0], [0.5, 0.1, 0.25], rtol=1e-4)
+    # The 5 s track gets one 10 s window, half of it zero padding, so its mean halves.
+    np.testing.assert_allclose(np.load(out / "vectors.npy")[:, 0], [0.5, 0.05, 0.25], rtol=1e-4)
+    windows = pd.read_parquet(out / "windows.parquet")
+    assert windows.groupby("track_id").size().to_dict() == {1: 3, 2: 1, 3: 3}
+    assert np.load(out / "window_vectors.npy").shape == (7, 2)
     assert pd.read_csv(out / "failed.csv")["track_id"].tolist() == [9]
     meta = json.loads((out / "metadata.json").read_text(encoding="utf-8"))
     assert meta["encoder"] == "level" and meta["dimensions"] == 2
-    assert meta["subsets"] == ["train", "test"] and meta["settings"] == SETTINGS
+    assert meta["settings"]["windows_per_track"] == 3 and meta["settings"]["sample_rate"] == 16000
 
 
-def test_resumed_extraction_skips_finished_shards(data_dir, tmp_path):
+def test_a_failed_job_resumes_and_refuses_other_settings(data_dir, tmp_path):
     out = tmp_path / "run"
-    calls = []
 
-    def crash_on_second_shard(samples):
-        calls.append(len(samples))
-        if len(calls) == 2:
-            raise RuntimeError("job killed")
-        return level(samples)
+    def crash(samples):
+        raise RuntimeError("job killed")
 
-    with pytest.raises(RuntimeError):
-        extract(data_dir, subsets(), out, crash_on_second_shard, SETTINGS, {})
-    assert [part.name for part in (out / "parts").iterdir()] == ["a.npz"]
+    result = extract(data_dir, out, crash, 16000, {"encoder": "level"})
+    assert result["parts_done"] == 0 and "RuntimeError" in result["failed"]["audio"]
 
-    calls.clear()
-    result = extract(data_dir, subsets(), out, crash_on_second_shard, SETTINGS, {})
-    # Shard a is kept, so only shard b's one readable track (three windows) is encoded now.
-    assert calls == [3]
-    assert np.load(out / "track_ids.npy").tolist() == [1, 2, 3]
-    assert result["encoded"] == 3
-
-
-def test_quick_profile_reads_the_sample_archive(tmp_path):
-    sample = tmp_path / "samples" / "v1"
-    sample.mkdir(parents=True)
-    tracks = [{"track_id": 5, "artist_id": 1, "genre_ids": [2], "audio_path": "5.mp3"}]
-    (sample / "sample.json").write_text(json.dumps({"tracks": tracks}), encoding="utf-8")
-
-    [(name, rows)] = read_tracks(tmp_path, "v1", "quick").items()
-    assert name == "quick-sample"
-    assert rows[["track_id", "shard"]].values.tolist() == [[5, "samples/v1/audio.tar"]]
+    assert extract(data_dir, out, level, 16000, {"encoder": "level"})["encoded"] == 3
+    with pytest.raises(ValueError, match="other settings"):
+        extract(data_dir, out, level, 16000, {"encoder": "level"}, windows_per_track=5)

@@ -49,6 +49,8 @@ before writing your own:
   `work(tar_path, rows, part)` for every shard without `parts/<shard>.npz`, in parallel and
   retried once, so a rerun or `--resume` continues where a job stopped. `shards.save` writes a
   file atomically. `logmel_cache.cache_shard` is a complete example of `work`.
+- `music_atlas.representation.extract(..., encode, ...)`: track and window vectors in the
+  shared format from any `encode(windows) -> vectors`, resumable; E2-06 plugs in its encoder.
 - `music_atlas.logmel`: the log-mel transform; `logmel_cache.read` and `logmel.normalise`
   give the cached windows to the CNN.
 - `music_atlas.tracking.track`: one MLflow experiment per step (`log-mel`, `embeddings`, ...),
