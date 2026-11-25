@@ -54,6 +54,17 @@ def main():
     )
     sample.add_argument("version", nargs="?", help="Dataset version; the profile's by default.")
     sample.add_argument("--track", action="store_true", help="Record the run in MLflow.")
+    logmel = commands.add_parser("log-mel", help="Cache log-mel windows for CNN training.")
+    logmel.add_argument("--profile", choices=["quick", "full"], default="quick",
+                        help="quick: the quick sample; full: every track of the three splits.")
+    logmel.add_argument("--limit", type=int, default=0, help="Cache at most N shards.")
+    logmel.add_argument("--workers", type=int, default=4)
+    logmel.add_argument("--track", action="store_true", help="Record the run in MLflow.")
+    logmel.add_argument("--resume", metavar="RUN_ID", help="Continue an unfinished tracked run.")
+    logmel.add_argument(
+        "--windows", type=int, help="Windows per track instead of the profile's; 5 contains the "
+        "three default windows as windows 0, 2 and 4.",
+    )
     args = parser.parse_args()
     if args.command == "doctor":
         result = {"paths": paths(), "profile": profile(args.profile)}
@@ -62,7 +73,9 @@ def main():
             result = download(paths()["data"], args.probe, args.limit, args.workers)
         except (OSError, ValueError) as error:
             parser.exit(1, f"{error}\n")
-    elif args.command in {"fma-audit", "fma-split", "fma-record-filter", "quick-sample"}:
+    elif args.command in {
+        "fma-audit", "fma-split", "fma-record-filter", "quick-sample", "log-mel",
+    }:
         try:
             storage = paths()
             if args.command == "fma-audit":
@@ -92,6 +105,28 @@ def main():
                     result |={"run_id": record.run_id, "run_dir": record.directory}
                 else:
                     result = run(storage["data"], args.version)
+            elif args.command == "log-mel":
+                from music_atlas.logmel_cache import run
+
+                options = {"profile_name": args.profile, "workers": args.workers,
+                           "limit": args.limit, "windows_per_track": args.windows}
+                if args.track or args.resume:
+                    from music_atlas.tracking import track
+
+                    windows = args.windows or profile(args.profile)["windows_per_track"]
+                    with track(
+                        "log-mel", args.profile, storage, representation="logmel",
+                        resume=args.resume,
+                        overrides={"windows_per_track": args.windows} if args.windows else None,
+                        description=f"Log-mel of {windows} windows per track (128 bands, 23 ms "
+                        "hop, dB re full scale) cached as float16, one file per shard, for CNN "
+                        "training.",
+                    ) as record:
+                        result = run(storage["data"], storage["artifacts"], **options,
+                                     record=record)
+                    result |= {"run_id": record.run_id, "run_dir": record.directory}
+                else:
+                    result = run(storage["data"], storage["artifacts"], **options)
             else:
                 from music_atlas.split_views import record_filter
 

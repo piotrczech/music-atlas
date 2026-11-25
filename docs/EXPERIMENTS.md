@@ -153,6 +153,26 @@ end) in the full profile and one centred window in the quick profile. Windows ov
 tracks, a track shorter than one window gets one zero-padded window, and an MP3 libsndfile
 rejects for its ID3 tag is read from its first frame.
 
+### Log-mel spectrograms
+
+`music_atlas.logmel` turns a 22,050 Hz window into 128 Slaney mel bands (0–11,025 Hz) of a
+2,048-point Hann FFT with a 512-sample hop: `(windows, 1, 128, 431)` float32 for 10 s windows
+(`logmel.PARAMETERS`). Power is in dB relative to full scale, not to each recording's peak, and
+clipped at −100 dB, so zero padding and digital silence sit at the floor; `valid_frames` counts
+the decoded frames of each window. It needs only numpy and scipy, so serving can apply the
+same transform without the research extra.
+
+`atlas log-mel` caches the windows in `artifacts/logmel/<run_id>/`: `parts/<shard>.npy`
+(float16 dB), `index.parquet` (one row per window: part, row, track, split, window,
+`valid_frames`, `mean_db`, `floor_share`), `metadata.json` (parameters, counts and the per-band
+mean and std of training frames), `rejects.csv`, `filter.parquet` and `examples.png`. Read it
+with `logmel_cache.read` and standardise with `logmel.normalise`. Windows with `floor_share`
+≥ `SILENT_SHARE` are digital silence (about 0.2%): skip them in training and aggregation
+rather than dropping tracks.
+
+`--windows 5` caches 50 s per track instead of 30 s; windows 0, 2 and 4 are the default three,
+so one cache serves both variants.
+
 ## Comparisons
 
 Compare acoustic features with logistic regression and one tree-based model, a compact CNN
@@ -173,6 +193,6 @@ factor at a time on the same split and metrics.
 Record the Git revision, seed, library versions, manifest hash, configuration, sample counts,
 hardware, runtime, CPU/GPU hours, RAM/VRAM and metrics for each run in MLflow through
 `music_atlas.tracking` ([DEVELOPMENT.md](DEVELOPMENT.md#mlflow)), and write its files to the
-run directory: `artifacts/<representation>/<run_id>/` or `outputs/<run_id>/`. Start with the 128-track quick sample and use its
-throughput to schedule full runs, keeping about 20% of the 4,000 CPU-hour and 300 GPU-hour
+run directory: `artifacts/<representation>/<run_id>/` or `outputs/<run_id>/`. Start with the
+128-track quick sample and use its throughput to schedule full runs, keeping about 20% of the 4,000 CPU-hour and 300 GPU-hour
 allocations for reruns and integration.

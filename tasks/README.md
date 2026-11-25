@@ -38,6 +38,22 @@ size, package and owner.
    `scripts/slurm/atlas-env.example.sh` to `~/.atlas-env.sh` once.
 4. Fit any preprocessing on train only; select on validation; leave test untouched.
 
+## Shared building blocks
+
+Each catalogue-wide step is one small function; the loop around it is shared. Reuse these
+before writing your own:
+
+- `music_atlas.shards.read_tracks(data_dir, profile)`: the quick sample or all three
+  partitions, with `split` and `tar` per track, the dataset identity and genre names.
+- `music_atlas.shards.process_shards(rows, parts_dir, work, workers)`: calls
+  `work(tar_path, rows, part)` for every shard without `parts/<shard>.npz`, in parallel and
+  retried once, so a rerun or `--resume` continues where a job stopped. `shards.save` writes a
+  file atomically. `logmel_cache.cache_shard` is a complete example of `work`.
+- `music_atlas.logmel`: the log-mel transform; `logmel_cache.read` and `logmel.normalise`
+  give the cached windows to the CNN.
+- `music_atlas.tracking.track`: one MLflow experiment per step (`log-mel`, `embeddings`, ...),
+  with quick and full runs side by side.
+
 ## E2. Representations · weeks 3–4
 
 | Task | Package | Priority | Size | Needs |

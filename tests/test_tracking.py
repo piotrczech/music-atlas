@@ -90,3 +90,12 @@ def test_failed_run_can_be_resumed_as_a_separate_attempt(storage):
     with pytest.raises(ValueError, match="already finished"), \
             track("probe", "quick", storage, "v1", "features", resume=run.run_id):
         pass
+
+
+def test_overridden_setting_replaces_the_profile_param_in_its_step_experiment(storage):
+    with track("probe", "quick", storage, "v1", overrides={"windows_per_track": 5}) as run:
+        pass
+    record, logged = finished_run(storage, run)
+    assert logged.data.params["windows_per_track"] == "5"
+    assert record["experiment"] == "probe"
+    assert mlflow.get_experiment(logged.info.experiment_id).name == "probe"

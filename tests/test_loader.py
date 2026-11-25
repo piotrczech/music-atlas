@@ -32,6 +32,11 @@ def test_windows_cover_beginning_middle_and_end_or_overlap_when_short():
     assert window_starts(10, 10, 3) == window_starts(4, 10, 3) == [0]
 
 
+def test_five_windows_contain_the_three_default_windows():
+    for frames in (5, 10, 25, 100, 1234567):
+        assert window_starts(frames, 10, 5)[::2] == window_starts(frames, 10, 3)
+
+
 def test_stereo_track_gives_aligned_mono_windows_at_target_rate(tmp_path):
     y = tone(60)
     path = write(tmp_path / "stereo.wav", np.stack([y, np.zeros_like(y)], axis=1), subtype="FLOAT")

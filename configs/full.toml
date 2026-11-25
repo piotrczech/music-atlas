@@ -9,6 +9,3 @@ windows_per_track = 3
 name = "fma-full"
 # Primary benchmark under $ATLAS_DATA_DIR/ready/, chosen in notebooks/01-data-exploration.ipynb.
 split = "fma-cap10-v1"
-
-[experiment]
-name = "music-atlas-full"

@@ -175,8 +175,11 @@ class Run:
 @contextmanager
 def track(step: str, profile_name: str, storage: dict[str, Path], version: str | None = None,
           representation: str | None = None, description: str | None = None,
-          resume: str | None = None):
+          resume: str | None = None, overrides: dict | None = None):
     """Run one step as an MLflow run; failures keep their run, marked FAILED or KILLED.
+
+    `overrides` are profile settings this run changes, such as `windows_per_track`; they are
+    logged as params in place of the profile's values.
 
     `resume` continues an unfinished run in its directory as a new MLflow run that points
     back to the earlier attempt, so attempts stay apart from completed results.
@@ -203,7 +206,7 @@ def track(step: str, profile_name: str, storage: dict[str, Path], version: str |
     params = {
         **{key: value for key, value in config.items() if not isinstance(value, dict)},
         "profile": profile_name, "dataset_version": dataset["version"],
-        "manifest_sha256": dataset["manifest_sha256"],
+        "manifest_sha256": dataset["manifest_sha256"], **(overrides or {}),
     }
     # Library versions follow from the Git revision through uv.lock.
     tags |= {
@@ -216,7 +219,9 @@ def track(step: str, profile_name: str, storage: dict[str, Path], version: str |
     }
 
     mlflow.set_tracking_uri(tracking_uri(storage["outputs"]))
-    mlflow.set_experiment(config["experiment"]["name"])
+    # One experiment per step (log-mel, embeddings, ...), so its quick and full runs sit
+    # together; the profile tells them apart as a param, tag and dataset name.
+    mlflow.set_experiment(step)
     run = Run(run_id, directory, profile_name, dataset)
     started, before = time.perf_counter(), usage()
     status = "FAILED"
@@ -246,7 +251,7 @@ def track(step: str, profile_name: str, storage: dict[str, Path], version: str |
             mlflow.log_params(run.results)
         record = {
             "run_id": run_id, "status": status, "mlflow_run_id": active.info.run_id,
-            "experiment": config["experiment"]["name"], "description": description,
+            "experiment": step, "description": description,
             "datasets": run.subsets, "params": params, "tags": tags, "metrics": run.metrics,
             "results": run.results,
         }
