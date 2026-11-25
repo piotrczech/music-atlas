@@ -80,20 +80,22 @@ def wav(amplitude, seconds=12):
 
 
 def make_split(root):
-    """Five tracks in two shards; track 5 is not an audio file."""
+    """Six tracks in two shards; track 5 is not an audio file and track 6 is silence."""
     ready = root / "ready" / "fma-cap10-v1"
     ready.mkdir(parents=True)
     (root / "fma").mkdir()
     rows = pd.DataFrame({
-        "track_id": [1, 2, 3, 4, 5], "split": ["train", "train", "validation", "test", "train"],
-        "shard": ["fma/000.tar"] * 3 + ["fma/001.tar"] * 2, "valid": True,
-        "artist_id": [1, 2, 3, 4, 5], "genre_ids": [[2], [3], [2], [3], [2]],
+        "track_id": [1, 2, 3, 4, 5, 6],
+        "split": ["train", "train", "validation", "test", "train", "test"],
+        "shard": ["fma/000.tar"] * 3 + ["fma/001.tar"] * 3, "valid": True,
+        "artist_id": [1, 2, 3, 4, 5, 6], "genre_ids": [[2], [3], [2], [3], [2], [3]],
     })
     rows["audio_path"] = [f"{shard[4:7]}/{track:06d}.wav"
                           for shard, track in zip(rows["shard"], rows["track_id"], strict=True)]
     write_tar(root / "fma/000.tar", {"000/000001.wav": wav(0.1), "000/000002.wav": wav(0.1),
                                      "000/000003.wav": wav(0.8)})
-    write_tar(root / "fma/001.tar", {"001/000004.wav": wav(0.8), "001/000005.wav": b"\0" * 64})
+    write_tar(root / "fma/001.tar", {"001/000004.wav": wav(0.8), "001/000005.wav": b"\0" * 64,
+                                     "001/000006.wav": wav(0.0)})
     rows.to_parquet(ready / "tracks.parquet")
     for split, group in rows.groupby("split"):
         group.to_parquet(ready / f"{split}.parquet")
@@ -112,22 +114,26 @@ def test_cache_covers_the_three_splits_resumes_and_fits_the_normaliser_on_train(
     pilot = run(tmp_path, artifacts, "full", workers=1, limit=1)
     assert (pilot["parts"], pilot["parts_cached"], pilot["failed"]) == (2, 1, {})
     result = run(tmp_path, artifacts, "full", workers=1)
-    assert (result["tracks"], result["windows"], result["rejected"]) == (5, 12, 1)
+    assert (result["tracks"], result["windows"], result["rejected"]) == (6, 15, 1)
 
     directory = artifacts / "logmel" / "fma-cap10-v1-full"
     index, arrays, metadata = read(directory)
-    assert metadata["counts"]["train"] == {"tracks": 2, "windows": 6, "short_windows": 0}
+    assert metadata["counts"]["train"] == {
+        "tracks": 2, "windows": 6, "short_windows": 0, "silent_windows": 0,
+    }
     assert index.groupby("split")["track_id"].nunique().to_dict() == {
-        "test": 1, "train": 2, "validation": 1,
+        "test": 2, "train": 2, "validation": 1,
     }
     assert index["window"].tolist()[:3] == [0, 1, 2] and (index["valid_frames"] == 431).all()
-    assert (index["floor_share"] == 0).all() and index["mean_db"].between(-60, 20).all()
+    audible = index[index["track_id"].ne(6)]
+    assert (audible["floor_share"] == 0).all() and audible["mean_db"].between(-60, 20).all()
+    assert metadata["counts"]["test"]["silent_windows"] == 3
     assert arrays["000"].shape == (9, N_MELS, 431) and arrays["000"].dtype == np.float16
     assert (directory / "examples.png").stat().st_size > 0
     assert pd.read_csv(directory / "rejects.csv")["track_id"].tolist() == [5]
     selection = pd.read_parquet(directory / "filter.parquet")
     assert selection.set_index("track_id")["included"].to_dict() == {
-        1: True, 2: True, 3: True, 4: True, 5: False,
+        1: True, 2: True, 3: True, 4: True, 5: False, 6: True,
     }
 
     # Louder validation and test tracks do not move the training statistics.
@@ -160,7 +166,7 @@ def test_unfinished_tracked_cache_fails_its_run_and_resumes_in_place(tmp_path, m
     with track("log-mel", "full", storage, representation="logmel",
                resume=pilot.run_id) as record:
         result = run(tmp_path, storage["artifacts"], "full", workers=1, record=record)
-    assert record.directory == pilot.directory and result["windows"] == 12
+    assert record.directory == pilot.directory and result["windows"] == 15
     logged = mlflow.get_run(json.loads((record.directory / "run.json").read_text())
                             ["mlflow_run_id"])
     assert logged.info.status == "FINISHED"

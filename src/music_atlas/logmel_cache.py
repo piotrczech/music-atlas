@@ -37,6 +37,9 @@ SPLITS = ("train", "validation", "test")
 COLUMNS = {"track_id": np.int64, "split": str, "window": np.int16, "start_seconds": np.float32,
            "valid_frames": np.int32, "mean_db": np.float32, "floor_share": np.float32}
 PASSES = 3  # a shard that fails on a Lustre hiccup usually passes on the next try
+# A window this much at the floor is digital silence, mostly a track's silent ending; it stays
+# in the cache and training can skip it through index.parquet.
+SILENT_SHARE = 0.99
 
 
 def tracks(data_dir: Path, profile_name: str) -> tuple[pd.DataFrame, dict, dict]:
@@ -131,6 +134,8 @@ def draw_examples(index: pd.DataFrame, arrays: dict, window_seconds: float, path
                                ("floor_share", "idxmax", "most values at the floor")):
         # Each panel shows another window, e.g. the shortest track is not repeated for the floor.
         rest = index.drop([row.name for row, _ in picks])
+        if column == "floor_share":  # a silent window already shows as the quietest
+            rest = rest[rest["floor_share"] < SILENT_SHARE]
         if rest.empty:
             break
         picks.append((rest.loc[getattr(rest[column], pick)()], note))
@@ -251,7 +256,8 @@ def run(data_dir: Path, artifacts_dir: Path, profile_name: str = "quick", worker
     examples = draw_examples(index, arrays, windows["window_seconds"], target / "examples.png")
     window_frames = 1 + round(windows["window_seconds"] * SAMPLE_RATE) // HOP
     counts = {split: {"tracks": int(group["track_id"].nunique()), "windows": len(group),
-                      "short_windows": int(group["valid_frames"].lt(window_frames).sum())}
+                      "short_windows": int(group["valid_frames"].lt(window_frames).sum()),
+                      "silent_windows": int(group["floor_share"].ge(SILENT_SHARE).sum())}
               for split, group in index.groupby("split")}
     metadata = {
         **config, "git_revision": git_revision(), "counts": counts, "rejected": len(errors),
