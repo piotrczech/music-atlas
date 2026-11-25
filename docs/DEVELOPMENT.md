@@ -169,6 +169,7 @@ sbatch scripts/slurm/fma-audit.sbatch
 sbatch scripts/slurm/fma-split.sbatch --audit "$ATLAS_DATA_DIR/manifests/fma_audio_audit.parquet" \
   --max-artist-share 0.1 --publish
 sbatch scripts/slurm/quick-sample.sbatch
+sbatch scripts/slurm/log-mel.sbatch --track        # --limit 16: pilot, --resume RUN_ID: finish
 ```
 
 - **Download** streams the 879 GiB archive without storing it and writes one verified tar per
@@ -183,6 +184,13 @@ sbatch scripts/slurm/quick-sample.sbatch
   `samples/fma-cap10-v1/` (1 GiB). Two builds on one core took 11 and 20 min, under 4 min of
   it CPU; the rest was waiting on Lustre. Opening a shard's tar index takes about 4 s and one
   quick window about 0.06 s, so batch jobs process shard by shard.
+- **Log-mel cache** decodes the windows of every partition track once, one shard per core,
+  into `artifacts/logmel/<run_id>/` ([format](EXPERIMENTS.md#log-mel-spectrograms)). In
+  November 2026 a 16-shard pilot and its resumed run cached 317,797 windows of 106,279 tracks
+  in 35 min on 16 cores (about 9.4 CPU-hours) into 33 GiB, run
+  `log-mel-full-20261125T082732Z-0399`. A window took 0.082 s to decode and 0.009 s to
+  transform. SLURM's `MaxRSS` reached the 32G request through the page cache of the written
+  parts; each worker peaked at about 1 GiB.
 
 For local work, copy the sample as the README shows (*Quick sample first, full data second*).
 A rerun reads only `audio.tar`: 6 s on WCSS and 2 s on an Apple M5, about 250 MiB of memory.

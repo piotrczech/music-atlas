@@ -153,6 +153,31 @@ end) in the full profile and one centred window in the quick profile. Windows ov
 tracks, a track shorter than one window gets one zero-padded window, and an MP3 libsndfile
 rejects for its ID3 tag is read from its first frame.
 
+### Log-mel spectrograms
+
+`music_atlas.logmel` turns a 22,050 Hz window into 128 mel bands (Slaney scale and area
+normalisation, 0–11,025 Hz) of a 2,048-point Hann FFT with a 512-sample hop: 431 frames per
+10 s window, laid out as `(windows, 1, n_mels, frames)` float32. Power is in dB relative to a
+full-scale signal, not to each recording's peak, so a quiet track stays quiet; power below
+10⁻¹⁰ is clipped to −100 dB. Zero padding of a short track therefore sits exactly at the floor,
+like digital silence, and each window keeps its number of decoded frames (`valid_frames`) for
+masking or cropping. The transform needs only numpy and scipy, so the API applies it to an
+upload without the research extra; a test keeps it within 0.02 dB of librosa.
+
+`atlas log-mel` caches the profile's windows for CNN training in
+`artifacts/logmel/<run_id>/`: one `parts/<shard>.npy` per tar shard (windows × 128 × 431,
+float16 dB), `index.parquet` (part, row, track, split, window, start, `valid_frames`, mean
+level and share at the floor of the decoded frames), `rejects.csv`, `filter.parquet`,
+`examples.png` and `metadata.json` with the transform parameters and the per-band mean and
+standard deviation of the training frames, padding excluded. `music_atlas.logmel.normalise`
+applies them; `music_atlas.logmel_cache.read` memory-maps the parts.
+
+Decoding a window costs about nine times its transform (0.082 s against 0.009 s on Bem2) and
+training reads every window once per epoch, so the cache pays off from the second epoch; the
+API computes a single upload on demand. In the full profile 610 windows (0.19%, mostly the end
+window of a track with a silent ending) are digital silence. They stay in the cache with a
+`floor_share` of 1 in the index, so training can skip them without changing the split.
+
 ## Comparisons
 
 Compare acoustic features with logistic regression and one tree-based model, a compact CNN
