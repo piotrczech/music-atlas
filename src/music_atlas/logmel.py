@@ -1,4 +1,4 @@
-"""Log-mel spectrograms for the CNN, in numpy and scipy only so the API image applies the same
+"""Log-mel spectrograms for the CNN, in numpy and scipy only so the API image can apply the same
 transform as training without the research extra."""
 
 from functools import cache
