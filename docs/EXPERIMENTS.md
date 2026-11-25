@@ -174,9 +174,15 @@ applies them; `music_atlas.logmel_cache.read` memory-maps the parts.
 
 Decoding a window costs about nine times its transform (0.082 s against 0.009 s on Bem2) and
 training reads every window once per epoch, so the cache pays off from the second epoch; the
-API computes a single upload on demand. In the full profile 610 windows (0.19%, mostly the end
-window of a track with a silent ending) are digital silence. They stay in the cache with a
-`floor_share` of 1 in the index, so training can skip them without changing the split.
+API computes a single upload on demand.
+
+In the full profile 610 of 317,797 windows (0.19%) are digital silence, with at least 99% of
+their frames at the floor: 482 end windows of tracks that end in 10 s or more of silence, 80 start
+windows and 48 middle ones. They come from 556 tracks whose other windows hold music, so the
+audit, which judges a whole track, rightly keeps them; only track 112068, a two-hour training
+file, is silent in all three windows. A silent window carries no genre, so CNN training and
+per-track averaging should skip windows with `floor_share` ≥ 0.99 (`SILENT_SHARE`) instead of
+dropping tracks or changing the split.
 
 ## Comparisons
 
