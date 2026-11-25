@@ -4,7 +4,7 @@
 
 | Path | Contents |
 |---|---|
-| `src/music_atlas/` | Python package: CLI (`cli.py`), API (`api.py`), download (`fma.py`), audit (`audit.py`), splits (`manifest.py`, `split_views.py`), audio loader (`loader.py`) and the tables behind the data notebook (`data_report.py`) |
+| `src/music_atlas/` | Python package: CLI (`cli.py`), API (`api.py`), download (`fma.py`), audit (`audit.py`), splits (`manifest.py`, `split_views.py`), audio loader (`loader.py`), the shard loop (`shards.py`), log-mel (`logmel.py`, `logmel_cache.py`) and the tables behind the data notebook (`data_report.py`) |
 | `web/` | Next.js interface |
 | `configs/` | `quick.toml` (128-track sample) and `full.toml` profiles |
 | `scripts/slurm/` | WCSS job scripts |
@@ -32,12 +32,9 @@ files. The upload endpoint reads up to the first 30 seconds of a file, with a 32
 `music_atlas.tracking.track()` records one step as one MLflow run, and CLI steps expose it as
 `--track`. The run gets the Git revision, profile parameters, elapsed and CPU seconds, peak
 memory and its status (`FINISHED`, `FAILED` or `KILLED`; a resumed run points to the earlier
-attempt). Each subset it reads (`train`, `validation`, `test` or `quick-sample`) is an MLflow
-dataset named `<split>/<subset>`. Its profile holds the manifest hash, a hash of the track
-IDs and track, artist and per-genre counts, and its digest hashes that profile: MLflow keeps
-the first dataset logged under a name and digest, so any change gets a new entry. Metrics
-hold only what the step measured.
-MLflow artifacts sit in four folders: `dataset/`, `evaluation/`, `model/` and `run/`. Large
+attempt). Each step is one MLflow experiment (`quick-sample`, `log-mel`, ...), and each
+subset it reads is a dataset named `<split>/<subset>` describing the tracks; metrics hold only
+what the step measured. MLflow artifacts sit in four folders: `dataset/`, `evaluation/`, `model/` and `run/`. Large
 outputs stay in the run directory (`artifacts/<representation>/<run_id>/` or
 `outputs/<run_id>/`) beside a `run.json` copy of the record. The application reads those
 files and never needs MLflow. Conventions for new steps are in
@@ -83,8 +80,8 @@ import mlflow  # with MLFLOW_ALLOW_FILE_STORE=true
 
 mlflow.set_tracking_uri("file:outputs/mlruns-wcss")  # or file:outputs/mlruns
 runs = mlflow.search_runs(
-    experiment_names=["music-atlas-quick"],
-    filter_string="tags.`atlas.step` = 'quick-sample' and attributes.status = 'FINISHED'",
+    experiment_names=["quick-sample"],  # one experiment per step
+    filter_string="tags.`atlas.profile` = 'quick' and attributes.status = 'FINISHED'",
     order_by=["metrics.tracks_per_second DESC"],
 )
 ```
@@ -153,10 +150,9 @@ write sharded outputs. Bem2's `TMPDIR` is also Lustre, so unpack only to node-lo
 such as Lem's NVMe, and never keep the only copy of a result in `TMPDIR`.
 
 **GPUs** are only on Lem: `lem-gpu-short` (up to 3 days) with `--gres=gpu:hopper:N` and an
-explicit `--cpus-per-task` (at most 16 per GPU). In November 2026 a node had an H100 with
-94 GiB, driver 595.112.07 and CUDA 13.2. Sync the locked `training` extra (PyTorch
-2.14.1+cu130) into node-local `TMPDIR` with `--gres=gpu:hopper:1,storage:local:50g` (14 s)
-rather than onto Lustre. The site container `pytorch_latest.sif` ships PyTorch 2.2.1.
+explicit `--cpus-per-task` (at most 16 per GPU), H100 with 94 GiB. Sync the locked `training`
+extra into node-local `TMPDIR` with `--gres=gpu:hopper:1,storage:local:50g` rather than onto
+Lustre.
 
 ### Data pipeline
 
@@ -169,23 +165,26 @@ sbatch scripts/slurm/fma-audit.sbatch
 sbatch scripts/slurm/fma-split.sbatch --audit "$ATLAS_DATA_DIR/manifests/fma_audio_audit.parquet" \
   --max-artist-share 0.1 --publish
 sbatch scripts/slurm/quick-sample.sbatch
+sbatch scripts/slurm/log-mel.sbatch --track        # --limit 16: pilot, --resume RUN_ID: finish,
+                                                   # --windows 5: 50 s per track instead of 30 s
 ```
 
-- **Download** streams the 879 GiB archive without storing it and writes one verified tar per
-  FMA folder: 156 shards of up to 11 GiB, 930 GiB of the 2,000 GiB quota, then the inventory.
-  The November 2026 run took 3 h 10 min on 8 cores (25 CPU-hours) for 106,574 tracks. SLURM's
-  `MaxRSS` includes the page cache of the tars being written, so it can reach `--mem` safely.
-- **Audit** decodes one shard per core into `manifests/fma_audio_audit/NNN.parquet`, about
-  19 CPU-hours for the 8,200 audio hours.
-- **Split** takes minutes on one core. The data notebook lists the candidate versions to build
-  before comparing them.
-- **Quick sample** copies 128 training tracks from about 85 shards into
-  `samples/fma-cap10-v1/` (1 GiB). Two builds on one core took 11 and 20 min, under 4 min of
-  it CPU; the rest was waiting on Lustre. Opening a shard's tar index takes about 4 s and one
-  quick window about 0.06 s, so batch jobs process shard by shard.
+Costs for sizing jobs (full profile unless stated):
 
-For local work, copy the sample as the README shows (*Quick sample first, full data second*).
-A rerun reads only `audio.tar`: 6 s on WCSS and 2 s on an Apple M5, about 250 MiB of memory.
+- **Download**: 156 tar shards of up to 11 GiB, 930 GiB of the 2,000 GiB quota, about
+  25 CPU-hours.
+- **Audit**: one shard per core, about 19 CPU-hours for 8,200 hours of audio.
+- **Split**: minutes on one core.
+- **Quick sample**: 128 training tracks copied from about 85 shards into
+  `samples/fma-cap10-v1/` (1 GiB), mostly waiting on Lustre. Opening a shard takes about 4 s,
+  so batch jobs go shard by shard.
+- **Log-mel cache**: one shard per core; decoding a 10 s window takes about 0.08 s and the
+  transform 0.01 s. Three windows per track take about 9 CPU-hours and 33 GiB, five about
+  5/3 of that. SLURM's `MaxRSS` counts the page cache of written files, so it can reach
+  `--mem` safely.
+
+For local work, copy the sample as the README shows (*Quick sample first, full data second*);
+a rerun reads only `audio.tar` in seconds.
 
 ### Notebooks on Open OnDemand
 

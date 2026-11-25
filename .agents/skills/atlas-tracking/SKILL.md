@@ -60,7 +60,8 @@ seconds, peak RSS, status, and `run/run.json` (+ `run/metadata.json` if present)
   numbers and small files. `run.json` in the directory mirrors the MLflow record, so the API
   and notebooks read results without MLflow.
 - `run_id` = `<step>-<profile>-<UTC time>-<4 hex>`; also the MLflow run name.
-- Experiment = the profile's `[experiment] name` (`music-atlas-quick`, `music-atlas-full`).
+- Experiment = the step (`quick-sample`, `log-mel`, `embeddings`, ...), so quick and full runs
+  of one step sit together; filter them by the `atlas.profile` tag or the dataset name.
 - Status: `FINISHED`, `FAILED` (exception) or `KILLED` (interrupt). Continue an unfinished
   run with `track(..., resume=run_id)`: same directory, new MLflow run tagged
   `atlas.resumed_from`. A finished run cannot be resumed.
@@ -83,8 +84,8 @@ seconds, peak RSS, status, and `run/run.json` (+ `run/metadata.json` if present)
 import os, mlflow
 os.environ["MLFLOW_ALLOW_FILE_STORE"] = "true"
 mlflow.set_tracking_uri("file:outputs/mlruns")
-mlflow.search_runs(experiment_names=["music-atlas-quick"],
-                   filter_string="tags.`atlas.step` = 'quick-sample'",
+mlflow.search_runs(experiment_names=["quick-sample"],
+                   filter_string="tags.`atlas.profile` = 'quick'",
                    order_by=["attributes.start_time DESC"])[
     ["tags.mlflow.runName", "status", "metrics.tracks_per_second", "tags.atlas.run_dir"]]
 ```
