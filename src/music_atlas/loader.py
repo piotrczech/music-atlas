@@ -31,7 +31,10 @@ def open_audio(source: str | Path | BinaryIO) -> sf.SoundFile:
         # libsndfile rejects valid FMA MP3s whose tag it cannot parse or that is followed by
         # zero padding or leftover ID3v2.2 frames (11 of 1,618 tracks in shards 000-001).
         end = 10 + (data[6] << 21 | data[7] << 14 | data[8] << 7 | data[9])
-        start = re.compile(rb"\xff[\xe0-\xff]").search(data, end + (10 if data[5] & 0x10 else 0))
+        # A Layer III frame header with a real bitrate. A looser `\xff[\xe0-\xff]` also matches
+        # padding such as ff ff 00 00, and mpg123 then prints "Illegal Audio-MPEG-Header".
+        header = re.compile(rb"\xff[\xe2\xe3\xf2\xf3\xfa\xfb][\x10-\xeb]")
+        start = header.search(data, end + (10 if data[5] & 0x10 else 0))
         if start is None:
             raise
         return sf.SoundFile(io.BytesIO(data[start.start() :]))
