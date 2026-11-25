@@ -54,6 +54,13 @@ def main():
     )
     sample.add_argument("version", nargs="?", help="Dataset version; the profile's by default.")
     sample.add_argument("--track", action="store_true", help="Record the run in MLflow.")
+    logmel = commands.add_parser("log-mel", help="Cache log-mel windows for CNN training.")
+    logmel.add_argument("--profile", choices=["quick", "full"], default="quick",
+                        help="quick: the quick sample; full: every track of the three splits.")
+    logmel.add_argument("--limit", type=int, default=0, help="Cache at most N shards.")
+    logmel.add_argument("--workers", type=int, default=4)
+    logmel.add_argument("--track", action="store_true", help="Record the run in MLflow.")
+    logmel.add_argument("--resume", metavar="RUN_ID", help="Continue an unfinished tracked run.")
     args = parser.parse_args()
     if args.command == "doctor":
         result = {"paths": paths(), "profile": profile(args.profile)}
@@ -62,7 +69,9 @@ def main():
             result = download(paths()["data"], args.probe, args.limit, args.workers)
         except (OSError, ValueError) as error:
             parser.exit(1, f"{error}\n")
-    elif args.command in {"fma-audit", "fma-split", "fma-record-filter", "quick-sample"}:
+    elif args.command in {
+        "fma-audit", "fma-split", "fma-record-filter", "quick-sample", "log-mel",
+    }:
         try:
             storage = paths()
             if args.command == "fma-audit":
@@ -92,6 +101,24 @@ def main():
                     result |={"run_id": record.run_id, "run_dir": record.directory}
                 else:
                     result = run(storage["data"], args.version)
+            elif args.command == "log-mel":
+                from music_atlas.logmel_cache import run
+
+                options = (storage["data"], storage["artifacts"], args.profile, args.workers,
+                           args.limit)
+                if args.track or args.resume:
+                    from music_atlas.tracking import track
+
+                    with track(
+                        "log-mel", args.profile, storage, representation="logmel",
+                        resume=args.resume,
+                        description="Log-mel windows (128 bands, 23 ms hop, dB re full scale) "
+                        "cached as float16, one file per shard, for CNN training.",
+                    ) as record:
+                        result = run(*options, record)
+                    result |= {"run_id": record.run_id, "run_dir": record.directory}
+                else:
+                    result = run(*options)
             else:
                 from music_atlas.split_views import record_filter
 
