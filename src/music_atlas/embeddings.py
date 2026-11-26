@@ -1,4 +1,4 @@
-"""Frozen LAION-CLAP audio projections on the shared FMA windows."""
+"""Frozen audio encoders on the shared FMA windows."""
 
 import math
 import os
@@ -11,6 +11,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from music_atlas import musicfm
 from music_atlas.representation import UNIT_MEAN, extract
 from music_atlas.settings import profile
 from music_atlas.shards import SPLITS, read_tracks
@@ -110,7 +111,7 @@ def load_encoder(checkpoint, revision, device):
     }
 
 
-def verify_vectors(directory, subsets):
+def verify_vectors(directory, subsets, dimensions=DIMENSIONS):
     """Reopen published arrays and verify alignment and unit lengths in bounded blocks."""
     ids = np.load(directory / "track_ids.npy", mmap_mode="r")
     vectors = np.load(directory / "vectors.npy", mmap_mode="r")
@@ -124,7 +125,7 @@ def verify_vectors(directory, subsets):
         )
         or np.any(ids[1:] <= ids[:-1])
         or ids.dtype != np.int64
-        or vectors.shape != (len(ids), DIMENSIONS)
+        or vectors.shape != (len(ids), dimensions)
         or vectors.dtype != np.float32
     ):
         raise ValueError("Published embedding IDs, dtype or shape do not match the manifest.")
@@ -133,7 +134,7 @@ def verify_vectors(directory, subsets):
         not np.array_equal(distinct, ids)
         or not np.array_equal(windows.track_id, np.repeat(distinct, counts))
         or not np.array_equal(windows.window, np.arange(len(windows)) - np.repeat(starts, counts))
-        or window_vectors.shape != (len(windows), DIMENSIONS)
+        or window_vectors.shape != (len(windows), dimensions)
         or window_vectors.dtype != np.float32
     ):
         raise ValueError(
@@ -186,7 +187,7 @@ def run(
         raise ValueError("Expected at least one window.")
     if benchmark_shards < 0 or (quick and benchmark_shards):
         raise ValueError("Benchmark shards are a positive subset of the full profile.")
-    if batch_size < 1 or cfg["window_seconds"] * RATE != 480000:
+    if batch_size < 1 or cfg["window_seconds"] != 10:
         raise ValueError("Expected positive batch size and shared 10-second windows.")
     if quick and ready.exists() and digest(ready / "tracks.parquet") != identity["manifest_sha256"]:
         raise ValueError("The canonical manifest does not match its published hash.")
@@ -233,7 +234,23 @@ def run(
     torch.manual_seed(cfg["seed"])
     torch.set_float32_matmul_precision("highest")
     torch.backends.cudnn.benchmark = False
-    checkpoint, revision = CHECKPOINTS[encoder]
+    if encoder == "musicfm-msd":
+        checkpoint, revision = musicfm.CHECKPOINT, musicfm.REVISION
+        rate, dimensions, prepare = musicfm.RATE, musicfm.DIMENSIONS, None
+        preprocessing = "MusicFM 24 kHz, zero padding, MSD log-mel stats, layer 7 frame mean"
+        model_config = {
+            "checkpoint_file": "pretrained_msd.pt",
+            "checkpoint_sha256": musicfm.WEIGHTS_SHA256,
+            "conformer_config": musicfm.CONFIG_REPO,
+            "conformer_config_revision": musicfm.CONFIG_REVISION,
+            "hidden_state_layer": musicfm.LAYER,
+            "musicfm_source_sha256": digest(Path(musicfm.__file__)),
+        }
+    else:
+        checkpoint, revision = CHECKPOINTS[encoder]
+        rate, dimensions, prepare = RATE, DIMENSIONS, repeatpad
+        preprocessing = "CLAP repeatpad, Slaney log-mel"
+        model_config = {}
     params = {
         "encoder": encoder,
         "checkpoint": checkpoint,
@@ -241,11 +258,11 @@ def run(
         "device": str(device),
         "hardware": torch.cuda.get_device_name(device) if device.type == "cuda" else "CPU",
         "aggregation": UNIT_MEAN,
-        "sample_rate": RATE,
+        "sample_rate": rate,
         "batch_size": batch_size,
-        "dimensions": DIMENSIONS,
+        "dimensions": dimensions,
         "benchmark_shards": benchmark_shards,
-        "preprocessing": "CLAP repeatpad, Slaney log-mel",
+        "preprocessing": preprocessing,
         "windows_per_track": window_count,
         "torch_version": str(torch.__version__),
         "numpy_version": np.__version__,
@@ -256,6 +273,7 @@ def run(
         "loader_sha256": digest(Path(loader.__file__)),
         "representation_sha256": digest(Path(representation.__file__)),
         "shards_sha256": digest(Path(shards.__file__)),
+        **model_config,
     }
     context = (
         track(
@@ -281,7 +299,10 @@ def run(
         print(f"Run: {directory.name}", flush=True)
         if device.type == "cuda":
             torch.cuda.reset_peak_memory_stats(device)
-        encode, timings = load_encoder(checkpoint, revision, device)
+        if encoder == "musicfm-msd":
+            encode, timings = musicfm.load_encoder(device)
+        else:
+            encode, timings = load_encoder(checkpoint, revision, device)
         metadata = {
             **params,
             "run_id": directory.name,
@@ -298,19 +319,19 @@ def run(
             storage["data"],
             directory,
             encode,
-            RATE,
+            rate,
             metadata,
             profile_name,
             windows_per_track=window_count,
             record=record,
-            prepare=repeatpad,
+            prepare=prepare,
             inputs=(rows, dataset, labels),
             batch_size=batch_size,
             aggregation=UNIT_MEAN,
         )
         if "encoded" not in result:
             raise ValueError(f"Incomplete shard extraction: {result['failed']}")
-        coverage = verify_vectors(directory, subsets)
+        coverage = verify_vectors(directory, subsets, dimensions)
         metrics = {**timings, **usage(), "total_seconds": time.perf_counter() - started}
         if device.type == "cuda":
             metrics["gpu_memory_mib"] = torch.cuda.max_memory_allocated(device) / 2**20
@@ -338,7 +359,7 @@ def run(
                 "estimated_extraction_hours": seconds / 3600,
                 "estimated_gpu_hours": seconds / 3600 if device.type == "cuda" else 0,
                 "suggested_walltime": f"{minutes // 60:02}:{minutes % 60:02}:00",
-                "vectors_and_ids_bytes": len(expected) * (4 * DIMENSIONS + 8),
+                "vectors_and_ids_bytes": len(expected) * (4 * dimensions + 8),
                 "estimated_window_files_bytes": round(
                     sum(
                         (directory / name).stat().st_size

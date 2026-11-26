@@ -11,11 +11,18 @@ set -euo pipefail
 source "$HOME/.atlas-env.sh"
 cd "${SLURM_SUBMIT_DIR:?Submit from the repository root}"
 : "${HF_HOME:?Set HF_HOME on project storage}"
+if [[ "${1:-}" == prepare-musicfm && "${SLURM_JOB_PARTITION:-}" != lem-cpu-* ]]; then
+    echo "Submit prepare-musicfm on Lem CPU with --gres=storage:local:50g." >&2
+    exit 2
+fi
 export UV_PROJECT_ENVIRONMENT="${TMPDIR:?}/venv" UV_LINK_MODE=copy
 export OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 OMP_NUM_THREADS=1
 uv sync --locked --extra training --extra research --extra tracking
 atlas="$UV_PROJECT_ENVIRONMENT/bin/atlas"
 case "${1:-}" in
+    prepare-musicfm)
+        exec "$UV_PROJECT_ENVIRONMENT/bin/python" -m music_atlas.musicfm
+        ;;
     pilot)
         shift
         set -- --profile quick --encoder both "$@"

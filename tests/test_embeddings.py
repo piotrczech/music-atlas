@@ -11,7 +11,7 @@ import pandas as pd
 import pytest
 import soundfile as sf
 
-from music_atlas import embeddings
+from music_atlas import embeddings, musicfm
 from music_atlas.embedding_pilot import pilot_report
 from music_atlas.embeddings import CHECKPOINTS, DIMENSIONS, RATE, load_encoder, verify_vectors
 from music_atlas.loader import Window
@@ -87,6 +87,64 @@ def test_pilot_neighbours_exclude_artist_and_split_group(tmp_path):
     assert report["constant_score_macro_ap"] == 0.5
 
 
+def test_musicfm_loads_pinned_weights_and_pools_frames(tmp_path, monkeypatch):
+    torch = pytest.importorskip("torch")
+    transformers = pytest.importorskip("transformers")
+    from torch import nn
+    from transformers.models.wav2vec2_conformer.modeling_wav2vec2_conformer import (
+        Wav2Vec2ConformerEncoder,
+    )
+
+    config = transformers.Wav2Vec2ConformerConfig(
+        hidden_size=8,
+        intermediate_size=16,
+        num_attention_heads=2,
+        num_hidden_layers=12,
+        num_conv_pos_embedding_groups=1,
+        position_embeddings_type="rotary",
+    )
+    config_path = tmp_path / "config.json"
+    config.to_json_file(config_path)
+    stats_path = tmp_path / "msd_stats.json"
+    stats_path.write_text('{"melspec_2048_mean":0,"melspec_2048_std":1}', encoding="utf-8")
+    state = {
+        f"model.conformer.{k}": v for k, v in Wav2Vec2ConformerEncoder(config).state_dict().items()
+    }
+    for block in range(2):
+        for conv_id in (1, 2, 3):
+            conv = nn.Conv2d(1, 1, 3)
+            norm = nn.BatchNorm2d(1)
+            prefix = f"model.conv.conv.{block}"
+            state.update({f"{prefix}.conv{conv_id}.{k}": v for k, v in conv.state_dict().items()})
+            state.update({f"{prefix}.bn{conv_id}.{k}": v for k, v in norm.state_dict().items()})
+    state.update({f"model.conv.linear.{k}": v for k, v in nn.Linear(32, 8).state_dict().items()})
+    frontend = "model.preprocessor_melspec_2048.mel_stft"
+    state[f"{frontend}.spectrogram.window"] = torch.hann_window(2048)
+    state[f"{frontend}.mel_scale.fb"] = torch.rand(1025, 128)
+    weights = tmp_path / "pretrained_msd.pt"
+    torch.save({"state_dict": state}, weights)
+    monkeypatch.setattr(musicfm, "DIMENSIONS", 8)
+
+    def cached_files(*, offline):
+        assert offline
+        return weights, stats_path, config_path
+
+    monkeypatch.setattr(musicfm, "checkpoint_files", cached_files)
+    encode, _ = musicfm.load_encoder("cpu")
+    wave = np.random.default_rng(42).uniform(-0.2, 0.2, (2, 240000)).astype(np.float32)
+    old_threads = torch.get_num_threads()
+    torch.set_num_threads(2)
+    try:
+        vectors = encode(wave)
+        assert vectors.shape == (2, 8)
+        np.testing.assert_allclose(encode(wave[:1])[0], vectors[0], atol=1e-5)
+    finally:
+        torch.set_num_threads(old_threads)
+    assert np.isfinite(vectors).all()
+    with pytest.raises(ValueError, match="24 kHz"):
+        encode(wave[:, ::2])
+
+
 def test_unit_mean_gives_equal_weight_to_each_window():
     windows = np.array([[3, 0], [0, 7]], dtype=np.float32)
     np.testing.assert_allclose(aggregate(windows, UNIT_MEAN), np.full(2, 2**-0.5), rtol=1e-6)
@@ -122,7 +180,8 @@ def encode(samples):
     return values
 
 
-def test_full_extraction_and_shard_estimate_on_synthetic_manifest(tmp_path, monkeypatch):
+@pytest.mark.parametrize("encoder", ["clap-general", "musicfm-msd"])
+def test_full_extraction_and_shard_estimate_on_synthetic_manifest(tmp_path, monkeypatch, encoder):
     pytest.importorskip("torch")
     pytest.importorskip("transformers")
     pytest.importorskip("mlflow")
@@ -141,30 +200,41 @@ def test_full_extraction_and_shard_estimate_on_synthetic_manifest(tmp_path, monk
         subset.to_parquet(ready / f"{name}.parquet")
     summary = {"version": "synthetic", "manifest_sha256": digest(ready / "tracks.parquet")}
     (ready / "summary.json").write_text(json.dumps(summary))
-    monkeypatch.setattr(embeddings, "load_encoder", lambda *args: (encode, {}))
-    result = embeddings.run(storage, "clap-general", "full", "cpu", 2, True, windows_per_track=5)
-    full = storage["artifacts"] / "clap-general" / result["run_id"]
+    if encoder == "musicfm-msd":
+        rate, dimensions = musicfm.RATE, musicfm.DIMENSIONS
+
+        def musicfm_encode(samples):
+            assert samples.shape[1] == 240000
+            return np.tile(encode(samples), (1, 2))
+
+        monkeypatch.setattr(musicfm, "load_encoder", lambda _: (musicfm_encode, {}))
+    else:
+        rate, dimensions = RATE, DIMENSIONS
+        monkeypatch.setattr(embeddings, "load_encoder", lambda *args: (encode, {}))
+    result = embeddings.run(storage, encoder, "full", "cpu", 2, True, windows_per_track=5)
+    full = storage["artifacts"] / encoder / result["run_id"]
     assert np.load(full / "track_ids.npy").tolist() == [6, 11, 24]
     meta = json.loads((full / "metadata.json").read_text())
     assert meta["manifest_sha256"] == summary["manifest_sha256"] and meta["tracks"] == 3
     assert meta["subsets"] == ["train", "validation", "test"]
-    assert meta["sample_rate"] == 48000 and meta["dimensions"] == 512
+    assert meta["sample_rate"] == rate and meta["dimensions"] == dimensions
     window_rows = pd.read_parquet(full / "windows.parquet")
     assert window_rows.groupby("track_id").size().tolist() == [5, 5, 5]
     raw = np.load(full / "window_vectors.npy")
     saved = np.load(full / "vectors.npy")
-    for block, vector in zip(raw.reshape(3, 5, 512), saved, strict=True):
+    for block, vector in zip(raw.reshape(3, 5, dimensions), saved, strict=True):
         np.testing.assert_allclose(aggregate(block, UNIT_MEAN), vector)
     coverage = json.loads((full / "evaluation" / "coverage.json").read_text())
-    assert coverage["shape"] == [3, 512] and coverage["failed"] == 0
-    assert coverage["window_shape"] == [15, 512]
+    assert coverage["shape"] == [3, dimensions] and coverage["failed"] == 0
+    assert coverage["window_shape"] == [15, dimensions]
     assert all(p == {"expected": 1, "encoded": 1} for p in coverage["partitions"].values())
     assert coverage["sha256"]["vectors.npy"] == digest(full / "vectors.npy")
-    bench = embeddings.run(storage, "clap-general", "full", "cpu", 2, False, benchmark_shards=1)
-    root = storage["artifacts"] / "clap-general" / bench["run_id"]
+    bench = embeddings.run(storage, encoder, "full", "cpu", 2, False, benchmark_shards=1)
+    root = storage["artifacts"] / encoder / bench["run_id"]
     estimate = json.loads((root / "evaluation" / "benchmark.json").read_text())
     assert estimate["catalogue_tracks"] == 3 and estimate["benchmark_tracks"] == 1
     assert estimate["source_shards"] == ["b.tar"] and estimate["estimated_gpu_hours"] == 0
+    assert estimate["vectors_and_ids_bytes"] == 3 * (dimensions * 4 + 8)
 
 
 def extract_test(root, rows, directory, encoder=encode, record=None, batch_size=2):

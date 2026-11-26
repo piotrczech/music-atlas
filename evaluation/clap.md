@@ -1,4 +1,4 @@
-# Frozen CLAP embeddings
+# Frozen audio embeddings
 
 ## Provisional encoder selection
 
@@ -12,8 +12,8 @@ checkpoints.
 
 As of 26 November 2026 at 12:00 CET, the paired Hopper pilot (`6446080`) is pending
 in the WCSS queue. It will compare both checkpoints with the integrated extractor, measure
-throughput and peak memory, and provide the evidence for the final choice. The three-shard
-benchmark and full catalogue extraction are pending.
+throughput and peak memory. Compare it with the MusicFM-MSD pilot before choosing an
+encoder. The three-shard benchmark and full catalogue extraction are pending.
 
 ## Dataset
 
@@ -60,6 +60,23 @@ and normalized uploader/title pairs produced zero matches. These references indi
 possible route through Freesound. The export does not identify the recordings used to train
 a particular checkpoint. Renamed or re-encoded recordings can also evade these checks.
 The extent of overlap remains unknown.
+
+### MusicFM-MSD
+
+The additional candidate uses [the authors' MusicFM-MSD release](https://huggingface.co/minzwon/MusicFM/tree/4513b38bc25ad1d227b1980819b9691ba97f4d87)
+(`pretrained_msd.pt` and `msd_stats.json`, MIT). The authors list Million Song Dataset
+for these weights and FMA-large for their separate MusicFM-FMA release. There is no
+recording-level overlap check between the Million Song Dataset audio and our FMA split.
+[MusicFM checkpoint and inference notes](https://github.com/minzwon/musicfm#quick-start).
+
+MusicFM reads the same 10-second intervals as CLAP. The shared loader supplies 24 kHz
+mono audio and zero padding. MusicFM uses its saved mel filters and MSD normalization
+statistics. We average the 25 Hz frames from hidden-state index 7 into one 1,024-component
+vector per window and apply the same window-to-track aggregation as CLAP. The adapter
+reuses the Transformers Conformer and records the pinned architecture configuration
+revision and weights checksum. It loads the release tensors on CPU before moving the
+inference model to the chosen device. The checkpoint preparation runs a two-waveform
+CPU smoke check. The quick pilot is the first measurement on FMA.
 
 ## Measurements on WCSS
 
@@ -128,6 +145,29 @@ SLURM allocation.
 source ~/.atlas-env.sh
 bash .agents/skills/wcss-slurm/scripts/preflight.sh scripts/slurm/embeddings.sbatch -A "$ATLAS_ACCOUNT"
 sbatch -A "$ATLAS_ACCOUNT" scripts/slurm/embeddings.sbatch pilot --batch-size 32
+```
+
+The paired `pilot` command runs the two CLAP checkpoints. To prepare MusicFM separately,
+request CPU resources and wait for the job to finish before submitting the MusicFM pilot.
+The CPU step checks the official checkpoint SHA-256 and tests inference on synthetic
+audio. The GPU step reads the cached files.
+
+```bash
+cpu_args=(-A "$ATLAS_ACCOUNT" -p lem-cpu-short --cpus-per-task=2 --mem=12G
+          --gres=storage:local:50g --time=00:20:00)
+bash .agents/skills/wcss-slurm/scripts/preflight.sh \
+  scripts/slurm/embeddings.sbatch "${cpu_args[@]}"
+sbatch --parsable "${cpu_args[@]}" scripts/slurm/embeddings.sbatch prepare-musicfm
+```
+
+Once preparation returns `COMPLETED` with exit code `0:0`, run on the same Hopper
+type, quick profile and batch size as the paired CLAP pilot:
+
+```bash
+bash .agents/skills/wcss-slurm/scripts/preflight.sh \
+  scripts/slurm/embeddings.sbatch -A "$ATLAS_ACCOUNT"
+sbatch --parsable -A "$ATLAS_ACCOUNT" scripts/slurm/embeddings.sbatch \
+  --encoder musicfm-msd --profile quick --batch-size 32
 ```
 
 Each quick run writes `evaluation/pilot.json` and `evaluation/performance.json` under

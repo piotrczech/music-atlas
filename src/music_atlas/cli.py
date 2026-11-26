@@ -65,9 +65,11 @@ def main():
         "--windows", type=int, help="Windows per track instead of the profile's; 5 contains the "
         "three default windows as windows 0, 2 and 4.",
     )
-    embeddings = commands.add_parser("embeddings", help="Extract frozen CLAP vectors.")
-    embeddings.add_argument("--encoder", choices=["clap-general", "clap-music", "both"],
-                            required=True, help="Use both for a paired quick pilot.")
+    embeddings = commands.add_parser("embeddings", help="Extract frozen audio embeddings.")
+    embeddings.add_argument(
+        "--encoder", choices=["clap-general", "clap-music", "musicfm-msd", "both"],
+        required=True, help="Use both for the paired CLAP quick pilot.",
+    )
     embeddings.add_argument("--profile", choices=["quick", "full"], default="quick")
     embeddings.add_argument("--device", choices=["auto", "cpu", "cuda"], default="auto")
     embeddings.add_argument("--batch-size", type=int, default=32, help="Windows per model call.")
