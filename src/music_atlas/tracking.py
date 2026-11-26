@@ -108,10 +108,12 @@ def dataset_input(dataset: dict, name: str, summary: dict | None = None, tracks=
 
 
 class Run:
-    def __init__(self, run_id: str, directory: Path, profile_name: str, dataset: dict):
+    def __init__(self, run_id: str, directory: Path, profile_name: str, dataset: dict,
+                 params: dict | None = None, tags: dict | None = None):
         self.run_id, self.directory = run_id, directory
         self.profile_name, self.dataset = profile_name, dataset
-        self.metrics, self.results, self.subsets = {}, {}, []
+        self.params, self.tags = params or {}, tags or {}
+        self.metrics, self.results, self.subsets, self.variants = {}, {}, [], {}
 
     def log(self, result: dict, prefix: str = ""):
         """Numbers become metrics and other values results; nested dicts become `key/name`."""
@@ -160,6 +162,23 @@ class Run:
         path.write_text(json.dumps(profile, indent=2) + "\n", encoding="utf-8")
         mlflow.log_artifact(str(path), "dataset")
         self.subsets.append(subset)
+
+    def log_variant(self, name: str, settings: dict, metrics: dict):
+        """Record one setting a study compares, such as a window length, as a child MLflow run.
+
+        The child repeats this run's params with `settings` changed and holds that setting's
+        metrics, so variants line up as rows of one table in the UI; the study's own table and
+        figures stay on this run.
+        """
+        import mlflow
+
+        tags = self.tags | {"atlas.run_id": f"{self.run_id}/{name}",
+                            "atlas.parent_run_id": self.run_id}
+        with mlflow.start_run(run_name=f"{self.run_id}/{name}", nested=True, tags=tags) as child:
+            mlflow.log_params(self.params | settings)
+            mlflow.log_metrics(metrics)
+        self.variants[name] = {"mlflow_run_id": child.info.run_id, "settings": settings,
+                               "metrics": metrics}
 
     def log_file(self, path: Path, folder: str):
         """Attach a small file to one of ARTIFACT_FOLDERS of the MLflow run."""
@@ -222,7 +241,7 @@ def track(step: str, profile_name: str, storage: dict[str, Path], version: str |
     # One experiment per step (log-mel, embeddings, ...), so its quick and full runs sit
     # together; the profile tells them apart as a param, tag and dataset name.
     mlflow.set_experiment(step)
-    run = Run(run_id, directory, profile_name, dataset)
+    run = Run(run_id, directory, profile_name, dataset, params, tags)
     started, before = time.perf_counter(), usage()
     status = "FAILED"
     # Not a `with` block: its exit would record an interrupted run as FAILED, not KILLED.
@@ -253,7 +272,7 @@ def track(step: str, profile_name: str, storage: dict[str, Path], version: str |
             "run_id": run_id, "status": status, "mlflow_run_id": active.info.run_id,
             "experiment": step, "description": description,
             "datasets": run.subsets, "params": params, "tags": tags, "metrics": run.metrics,
-            "results": run.results,
+            "results": run.results, **({"variants": run.variants} if run.variants else {}),
         }
         (directory / "run.json").write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
         for name in ("run.json", "metadata.json"):

@@ -173,6 +173,17 @@ rather than dropping tracks.
 `--windows 5` caches 50 s per track instead of 30 s; windows 0, 2 and 4 are the default three,
 so one cache serves both variants.
 
+### Window length
+
+Windows stay 10 s long for now. `atlas window-study` compares the centred 5, 10 and 20 s
+windows of the quick sample with the transform fixed: a longer window holds proportionally more
+onsets and sits nearer the whole track's average spectrum, but decoding, memory, the cache and
+CNN input grow with it. The share of windows whose spectrum is nearest their own track among
+the 128 is 59%, 66% and 68%; on 128 tracks one standard error is about 4 points, so the sample
+does not separate 10 from 20 s. Whether more audio per track helps the classifier is decided by
+the CNN in E3-05 (30 against 50 s per track). Each length is a child run of the study run,
+whose `evaluation/results.csv` holds the table.
+
 ## Comparisons
 
 Compare acoustic features with logistic regression and one tree-based model, a compact CNN

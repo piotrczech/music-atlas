@@ -4,7 +4,7 @@
 
 | Path | Contents |
 |---|---|
-| `src/music_atlas/` | Python package: CLI (`cli.py`), API (`api.py`), download (`fma.py`), audit (`audit.py`), splits (`manifest.py`, `split_views.py`), audio loader (`loader.py`), the shard loop (`shards.py`), log-mel (`logmel.py`, `logmel_cache.py`) and the tables behind the data notebook (`data_report.py`) |
+| `src/music_atlas/` | Python package: CLI (`cli.py`), API (`api.py`), download (`fma.py`), audit (`audit.py`), splits (`manifest.py`, `split_views.py`), audio loader (`loader.py`), the shard loop (`shards.py`), log-mel (`logmel.py`, `logmel_cache.py`), the window length study (`window_study.py`) and the tables behind the data notebook (`data_report.py`) |
 | `web/` | Next.js interface |
 | `configs/` | `quick.toml` (128-track sample) and `full.toml` profiles |
 | `scripts/slurm/` | WCSS job scripts |
@@ -167,6 +167,7 @@ sbatch scripts/slurm/fma-split.sbatch --audit "$ATLAS_DATA_DIR/manifests/fma_aud
 sbatch scripts/slurm/quick-sample.sbatch
 sbatch scripts/slurm/log-mel.sbatch --track        # --limit 16: pilot, --resume RUN_ID: finish,
                                                    # --windows 5: 50 s per track instead of 30 s
+sbatch scripts/slurm/window-study.sbatch --track   # quick sample at 5, 10 and 20 s
 ```
 
 Costs for sizing jobs (full profile unless stated):
@@ -182,6 +183,9 @@ Costs for sizing jobs (full profile unless stated):
   transform 0.01 s. Three windows per track take about 9 CPU-hours and 33 GiB, five about
   5/3 of that. SLURM's `MaxRSS` counts the page cache of written files, so it can reach
   `--mem` safely.
+- **Window study** (quick sample only): about 5 min and 2 GiB on one core, mostly decoding
+  whole tracks for the reference. A window costs about 10 ms to open and pre-roll plus 3 ms
+  per second of audio to decode.
 
 For local work, copy the sample as the README shows (*Quick sample first, full data second*);
 a rerun reads only `audio.tar` in seconds.

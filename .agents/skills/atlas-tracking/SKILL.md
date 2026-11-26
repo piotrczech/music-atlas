@@ -5,8 +5,9 @@ description: Music Atlas convention for recording and reading experiment runs in
 
 # Tracking runs in Music Atlas
 
-One step = one MLflow run + one run directory. The code is `src/music_atlas/tracking.py`
-(about 250 lines); read it instead of the MLflow docs.
+One step = one MLflow run + one run directory; a study comparing settings in one process
+adds a child run per setting. The code is `src/music_atlas/tracking.py` (about 280 lines); read
+it instead of the MLflow docs.
 
 ## Wrap a step
 
@@ -29,6 +30,31 @@ with track("acoustic-features", "quick", paths(), representation="acoustic",
 `track()` records by itself: Git revision (`-dirty` if modified), profile params (seed,
 windows, sample rate), full manifest hash, host, CPUs, SLURM job ID, elapsed and CPU
 seconds, peak RSS, status, and `run/run.json` (+ `run/metadata.json` if present).
+
+## Studies: one child run per compared setting
+
+When one process measures several values of one setting (window lengths, a hyperparameter
+grid), log each value as a child run so the UI can compare them column by column and plot a
+metric against the setting. `atlas window-study --track` is the reference.
+
+```python
+with track("window-study", "quick", paths(), overrides={"window_seconds": "5, 10, 20"},
+           description="Only the window length changes; one child run per length.") as run:
+    run.log_dataset(tracks, "quick-sample", genres)        # on the parent, once
+    for length, row in by_length.items():
+        run.log_variant(f"w{length}", {"window_seconds": length}, row)
+    run.log({"between_tracks_gap_db": between})            # what describes the whole study
+    run.log_file(results_csv, "evaluation")                # comparison table and figures
+```
+
+- A child repeats the parent's params with its `settings` changed and gets the same metric
+  names as its siblings (`own_track_share`, not `w5/own_track_share`). Name the parent's
+  varied param after the values it covers.
+- Table, figures and datasets stay on the parent; `run.json` lists the children under
+  `variants`. In the UI expand the parent row, or select the children and press *Compare*.
+- Settings that need their own job (a CNN trained with augmentation and without) are separate
+  runs of one step, not children: give each the setting through `overrides` and compare them in
+  the step's experiment.
 
 ## Dataset, metrics, artifacts: what goes where
 

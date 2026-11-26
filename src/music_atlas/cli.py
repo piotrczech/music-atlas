@@ -65,6 +65,9 @@ def main():
         "--windows", type=int, help="Windows per track instead of the profile's; 5 contains the "
         "three default windows as windows 0, 2 and 4.",
     )
+    commands.add_parser(
+        "window-study", help="Compare 5, 10 and 20 s log-mel windows on the quick sample.",
+    ).add_argument("--track", action="store_true", help="Record the run in MLflow.")
     args = parser.parse_args()
     if args.command == "doctor":
         result = {"paths": paths(), "profile": profile(args.profile)}
@@ -74,7 +77,7 @@ def main():
         except (OSError, ValueError) as error:
             parser.exit(1, f"{error}\n")
     elif args.command in {
-        "fma-audit", "fma-split", "fma-record-filter", "quick-sample", "log-mel",
+        "fma-audit", "fma-split", "fma-record-filter", "quick-sample", "log-mel", "window-study",
     }:
         try:
             storage = paths()
@@ -127,6 +130,24 @@ def main():
                     result |= {"run_id": record.run_id, "run_dir": record.directory}
                 else:
                     result = run(storage["data"], storage["artifacts"], **options)
+            elif args.command == "window-study":
+                from music_atlas.window_study import run
+
+                if args.track:
+                    from music_atlas.tracking import track
+
+                    with track(
+                        "window-study", "quick", storage,
+                        description="Window length study: the log-mel of 5, 10 and 20 s centred "
+                        "windows of the quick sample. Only the window length changes; the sample "
+                        "rate, transform and window centre stay fixed. One child run per "
+                        "length; the table and examples are on this run.",
+                        overrides={"window_seconds": "5, 10, 20"},
+                    ) as record:
+                        result = run(storage["data"], storage["outputs"], record)
+                    result |= {"run_id": record.run_id, "run_dir": record.directory}
+                else:
+                    result = run(storage["data"], storage["outputs"])
             else:
                 from music_atlas.split_views import record_filter
 
