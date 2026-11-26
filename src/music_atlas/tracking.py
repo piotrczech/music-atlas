@@ -28,6 +28,31 @@ MAX_LOGGED_FILE_MIB = 50
 ARTIFACT_FOLDERS = ("dataset", "evaluation", "model", "run")
 
 
+def write_json(path: Path, payload: dict):
+    temporary = path.with_suffix(".json.partial")
+    temporary.write_text(json.dumps(payload, indent=2, allow_nan=False) + "\n", encoding="utf-8")
+    temporary.replace(path)
+
+
+@contextmanager
+def _run_lock(directory):
+    # The OS releases the lock even if the worker cannot run its cleanup.
+    with (directory / ".run.lock").open("a+b") as file:
+        try:
+            if os.name == "nt":
+                import msvcrt
+
+                file.seek(0)
+                msvcrt.locking(file.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError as error:
+            raise ValueError(f"Another attempt is using {directory}.") from error
+        yield
+
+
 def git_revision() -> str:
     try:
         commit = subprocess.run(
@@ -69,7 +94,13 @@ def tracking_uri(outputs_dir: Path) -> str:
 def usage() -> dict:
     """CPU seconds and peak RSS of this process and its finished workers, not the whole node."""
     if resource is None:
-        return {}
+        try:
+            import win32api
+            import win32process
+        except ImportError:
+            return {}
+        peak = win32process.GetProcessMemoryInfo(win32api.GetCurrentProcess())["PeakWorkingSetSize"]
+        return {"cpu_seconds": time.process_time(), "peak_rss_mib": round(peak / 2**20)}
     own, workers = (resource.getrusage(who)
                     for who in (resource.RUSAGE_SELF, resource.RUSAGE_CHILDREN))
     # ru_maxrss is in bytes on macOS and in KiB on Linux.
@@ -157,7 +188,7 @@ class Run:
                              tags={"profile": self.profile_name})
         path = self.directory / "dataset" / f"{subset}.json"
         path.parent.mkdir(exist_ok=True)
-        path.write_text(json.dumps(profile, indent=2) + "\n", encoding="utf-8")
+        write_json(path, profile)
         mlflow.log_artifact(str(path), "dataset")
         self.subsets.append(subset)
 
@@ -184,24 +215,31 @@ def track(step: str, profile_name: str, storage: dict[str, Path], version: str |
     `resume` continues an unfinished run in its directory as a new MLflow run that points
     back to the earlier attempt, so attempts stay apart from completed results.
     """
-    import mlflow
-
     config = profile(profile_name)
     version = version or config["dataset"]["split"]
     base = storage["artifacts"] / representation if representation else storage["outputs"]
-    tags = {}
     if resume:
+        if Path(resume).name != resume or resume in (".", ".."):
+            raise ValueError("Expected a run ID in the representation directory.")
         run_id, directory = resume, base / resume
-        previous = json.loads((directory / "run.json").read_text(encoding="utf-8"))
-        if previous["status"] == "FINISHED":
-            raise ValueError(f"{resume} already finished; start a new run instead.")
-        tags["atlas.resumed_from"] = previous["mlflow_run_id"]
     else:
         stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
         # The suffix keeps parallel array tasks started in the same second apart.
         run_id = f"{step}-{profile_name}-{stamp}-{secrets.token_hex(2)}"
         directory = base / run_id
         directory.mkdir(parents=True)
+    with _run_lock(directory), _attempt(
+        step, profile_name, storage, version, representation, description,
+        config, run_id, directory, resume, overrides,
+    ) as run:
+        yield run
+
+
+@contextmanager
+def _attempt(step, profile_name, storage, version, representation, description, config,
+             run_id, directory, resume, overrides):
+    import mlflow
+
     dataset = dataset_identity(storage["data"], version)
     params = {
         **{key: value for key, value in config.items() if not isinstance(value, dict)},
@@ -209,7 +247,7 @@ def track(step: str, profile_name: str, storage: dict[str, Path], version: str |
         "manifest_sha256": dataset["manifest_sha256"], **(overrides or {}),
     }
     # Library versions follow from the Git revision through uv.lock.
-    tags |= {
+    tags = {
         "atlas.step": step, "atlas.run_id": run_id, "atlas.run_dir": str(directory),
         "atlas.representation": representation or "", "atlas.profile": profile_name,
         "mlflow.source.git.commit": git_revision(), "host": platform.node(),
@@ -223,11 +261,28 @@ def track(step: str, profile_name: str, storage: dict[str, Path], version: str |
     # together; the profile tells them apart as a param, tag and dataset name.
     mlflow.set_experiment(step)
     run = Run(run_id, directory, profile_name, dataset)
+    state = directory / "run.json"
+    if resume:
+        previous = json.loads(state.read_text(encoding="utf-8"))
+        if previous["status"] == "FINISHED":
+            raise ValueError(f"{resume} already finished; start a new run instead.")
+        if previous["params"] != params or previous["tags"]["atlas.step"] != step:
+            raise ValueError("Cannot resume after a parameter or manifest change.")
+        tags["atlas.resumed_from"] = previous["mlflow_run_id"]
+        if previous["status"] == "RUNNING":
+            mlflow.MlflowClient().set_terminated(previous["mlflow_run_id"], status="KILLED")
+        run.subsets = sorted(p.stem for p in (directory / "dataset").glob("*.json"))
     started, before = time.perf_counter(), usage()
     status = "FAILED"
     # Not a `with` block: its exit would record an interrupted run as FAILED, not KILLED.
     active = mlflow.start_run(run_name=run_id, tags=tags, description=description)
+    header = {
+        "run_id": run_id, "mlflow_run_id": active.info.run_id,
+        "experiment": step, "description": description,
+        "params": params, "tags": tags,
+    }
     try:
+        write_json(state, {**header, "status": "RUNNING", "datasets": run.subsets})
         mlflow.log_params(params)
         yield run
         status = "FINISHED"
@@ -249,13 +304,8 @@ def track(step: str, profile_name: str, storage: dict[str, Path], version: str |
         mlflow.log_metrics(run.metrics)
         if run.results:
             mlflow.log_params(run.results)
-        record = {
-            "run_id": run_id, "status": status, "mlflow_run_id": active.info.run_id,
-            "experiment": step, "description": description,
-            "datasets": run.subsets, "params": params, "tags": tags, "metrics": run.metrics,
-            "results": run.results,
-        }
-        (directory / "run.json").write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+        write_json(state, {**header, "status": status, "datasets": run.subsets,
+                           "metrics": run.metrics, "results": run.results})
         for name in ("run.json", "metadata.json"):
             if (directory / name).is_file():
                 mlflow.log_artifact(str(directory / name), "run")

@@ -76,14 +76,20 @@ def safe_work(work: Work, tar: str, rows: pd.DataFrame, part: Path) -> str | Non
 
 
 def process_shards(rows: pd.DataFrame, parts: Path, work: Work, workers: int = 1,
-                   limit: int = 0) -> tuple[list[str], dict[str, str]]:
+                   limit: int = 0, *,
+                   complete: Callable[[Path, pd.DataFrame], bool] | None = None
+                   ) -> tuple[list[str], dict[str, str]]:
     """Run `work` on every shard without a part yet, at most `limit` shards if set.
 
     Returns the shards finished now and the errors of those that failed every pass.
     """
     parts.mkdir(parents=True, exist_ok=True)
     shards = {Path(tar).stem: (tar, group) for tar, group in rows.groupby("tar", sort=True)}
-    todo = [name for name in shards if not (parts / f"{name}.npz").exists()][: limit or None]
+    def reusable(name):
+        path = parts / f"{name}.npz"
+        return path.is_file() and (complete is None or complete(path, shards[name][1]))
+
+    todo = [name for name in shards if not reusable(name)][: limit or None]
     finished, failed = [], {}
     for _ in range(PASSES):
         if not todo:
@@ -94,7 +100,9 @@ def process_shards(rows: pd.DataFrame, parts: Path, work: Work, workers: int = 1
         else:
             # Not fork: a tracked run has MLflow threads, and forking a threaded process can
             # deadlock the child. forkserver starts workers from a clean process instead.
-            context = multiprocessing.get_context("forkserver")
+            methods = multiprocessing.get_all_start_methods()
+            method = "forkserver" if "forkserver" in methods else "spawn"
+            context = multiprocessing.get_context(method)
             with ProcessPoolExecutor(workers, mp_context=context) as pool:
                 errors = list(pool.map(safe_work, *zip(*jobs, strict=True)))
         failed = {name: error for name, error in zip(todo, errors, strict=True) if error}

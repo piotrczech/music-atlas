@@ -65,6 +65,17 @@ def main():
         "--windows", type=int, help="Windows per track instead of the profile's; 5 contains the "
         "three default windows as windows 0, 2 and 4.",
     )
+    embeddings = commands.add_parser("embeddings", help="Extract frozen CLAP vectors.")
+    embeddings.add_argument("--encoder", choices=["clap-general", "clap-music", "both"],
+                            required=True, help="Use both for a paired quick pilot.")
+    embeddings.add_argument("--profile", choices=["quick", "full"], default="quick")
+    embeddings.add_argument("--device", choices=["auto", "cpu", "cuda"], default="auto")
+    embeddings.add_argument("--batch-size", type=int, default=32, help="Windows per model call.")
+    embeddings.add_argument("--windows", type=int, help="Override the profile's windows per track.")
+    embeddings.add_argument("--benchmark-shards", type=int, default=0,
+                            help="Measure N evenly spaced full-profile shards in a separate run.")
+    embeddings.add_argument("--track", action="store_true", help="Record the run in MLflow.")
+    embeddings.add_argument("--resume", metavar="RUN_ID", help="Continue a tracked extraction.")
     args = parser.parse_args()
     if args.command == "doctor":
         result = {"paths": paths(), "profile": profile(args.profile)}
@@ -74,7 +85,7 @@ def main():
         except (OSError, ValueError) as error:
             parser.exit(1, f"{error}\n")
     elif args.command in {
-        "fma-audit", "fma-split", "fma-record-filter", "quick-sample", "log-mel",
+        "fma-audit", "fma-split", "fma-record-filter", "quick-sample", "log-mel", "embeddings",
     }:
         try:
             storage = paths()
@@ -127,6 +138,20 @@ def main():
                     result |= {"run_id": record.run_id, "run_dir": record.directory}
                 else:
                     result = run(storage["data"], storage["artifacts"], **options)
+            elif args.command == "embeddings":
+                from music_atlas.embeddings import run
+
+                if args.encoder == "both":
+                    from music_atlas.embedding_pilot import compare
+
+                    if args.profile != "quick" or args.benchmark_shards or args.resume:
+                        parser.error("The paired pilot requires fresh quick runs.")
+                    result = compare(
+                        storage, args.device, args.batch_size, args.track, args.windows
+                    )
+                else:
+                    result = run(storage, args.encoder, args.profile, args.device, args.batch_size,
+                                 args.track, args.resume, args.benchmark_shards, args.windows)
             else:
                 from music_atlas.split_views import record_filter
 
@@ -135,8 +160,10 @@ def main():
                     args.representation, args.run_id, args.exclusions,
                 )
         except ImportError as error:
+            extra = "--extra training " if args.command == "embeddings" else ""
             parser.exit(
-                1, f"{error}. Install with uv sync --locked --extra research --extra tracking.\n",
+                1, f"{error}. Install with uv sync --locked {extra}--extra research "
+                   "--extra tracking.\n",
             )
         except (OSError, ValueError, KeyError) as error:
             parser.exit(1, f"{error}\n")

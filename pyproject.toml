@@ -23,7 +23,7 @@ research = [
 ]
 notebook = ["ipykernel>=6.29,<8"]
 tracking = ["mlflow>=3.1,<4"]
-training = ["torch>=2.6,<3"]
+training = ["torch>=2.6,<3", "transformers==4.57.6"]
 
 [dependency-groups]
 dev = ["httpx>=0.28,<1", "pytest>=8.3,<10", "ruff>=0.11,<1"]
