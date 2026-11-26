@@ -179,8 +179,9 @@ def draw_examples(windows: pd.DataFrame, spectrograms: dict, titles: dict, path:
 def run(data_dir: Path, outputs_dir: Path, record=None) -> dict:
     """Measure every length on every quick-sample track and write the table and examples.
 
-    With `record` (a `music_atlas.tracking.Run`) the files go to its run directory, the
-    results by length to its metrics and the table and figure to `evaluation/`.
+    With `record` (a `music_atlas.tracking.Run`) the files go to its run directory, each
+    length becomes a child run with its row of the table as metrics, and the table and figure
+    go to the study's `evaluation/`.
     """
     rows, dataset, genres = read_tracks(data_dir, "quick")
     target = record.directory if record is not None else outputs_dir / "window-study"
@@ -209,17 +210,20 @@ def run(data_dir: Path, outputs_dir: Path, record=None) -> dict:
     titles = {row.track_id: ", ".join(genres[genre] for genre in row.genre_ids if genre in genres)
               for row in rows.itertuples()}
     examples = draw_examples(windows, spectrograms, titles, target / "examples.png")
-    by_length = {f"w{row.pop('window_seconds')}": row for row in results.to_dict("records")}
+    by_length = {row.pop("window_seconds"): row for row in results.to_dict("records")}
     whole = np.array([track[0] for track in spectra.values()])
     # How far apart two different tracks are, to read the windows' gaps against.
     between = float(np.median(gaps(whole, whole)[np.triu_indices(len(whole), 1)]))
-    measured = {"rejected": len(errors), "between_tracks_gap_db": round(between, 3), **by_length}
+    study = {"rejected": len(errors), "between_tracks_gap_db": round(between, 3)}
 
     if record is not None:
         record.log_dataset(rows, "quick-sample", genres, {
             "window_seconds": list(LENGTHS), "sample_rate": SAMPLE_RATE, "windows_per_track": 1,
         })
-        record.log(measured)
+        record.log(study)
+        for length, row in by_length.items():
+            record.log_variant(f"w{length}", {"window_seconds": length}, row)
         record.log_file(target / "results.csv", "evaluation")
         record.log_file(examples, "evaluation")
-    return {"run": str(target), "version": dataset["version"], "tracks": len(rows), **measured}
+    return {"run": str(target), "version": dataset["version"], "tracks": len(rows), **study,
+            **{f"w{length}": row for length, row in by_length.items()}}

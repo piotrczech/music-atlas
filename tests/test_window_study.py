@@ -81,11 +81,20 @@ def test_tracked_study_logs_results_by_length(tmp_path, monkeypatch):
                "outputs": tmp_path / "outputs"}
     with track("window-study", "quick", storage) as record:
         run(tmp_path, storage["outputs"], record)
-    logged = mlflow.get_run(json.loads((record.directory / "run.json").read_text())
-                            ["mlflow_run_id"])
-    assert {"w5/own_track_share", "w20/decode_ms", "between_tracks_gap_db"} <= set(
-        logged.data.metrics)
-    assert logged.data.params["window_seconds"] == "10"  # the profile's reference length
+    saved = json.loads((record.directory / "run.json").read_text())
+    assert set(saved["variants"]) == {"w5", "w10", "w20"}
+    logged = mlflow.get_run(saved["mlflow_run_id"])
+    assert {"between_tracks_gap_db", "rejected"} <= set(logged.data.metrics)
+    assert logged.data.params["window_seconds"] == "10"  # the profile's, unless overridden
     files = {item.path for item in mlflow.artifacts.list_artifacts(
         run_id=logged.info.run_id, artifact_path="evaluation")}
     assert files == {"evaluation/results.csv", "evaluation/examples.png"}
+
+    # One child run per length, comparable column by column in the MLflow UI.
+    children = mlflow.search_runs(
+        experiment_ids=[logged.info.experiment_id], output_format="list",
+        filter_string=f"tags.mlflow.parentRunId = '{logged.info.run_id}'")
+    assert sorted(int(child.data.params["window_seconds"]) for child in children) == [5, 10, 20]
+    assert all({"own_track_share", "decode_ms", "gap_db"} <= set(child.data.metrics)
+               for child in children)
+    assert {child.data.params["profile"] for child in children} == {"quick"}

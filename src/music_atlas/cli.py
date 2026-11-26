@@ -140,7 +140,9 @@ def main():
                         "window-study", "quick", storage,
                         description="Window length study: the log-mel of 5, 10 and 20 s centred "
                         "windows of the quick sample. Only the window length changes; the sample "
-                        "rate, transform and window centre stay fixed.",
+                        "rate, transform and window centre stay fixed. One child run per "
+                        "length; the table and examples are on this run.",
+                        overrides={"window_seconds": "5, 10, 20"},
                     ) as record:
                         result = run(storage["data"], storage["outputs"], record)
                     result |= {"run_id": record.run_id, "run_dir": record.directory}
