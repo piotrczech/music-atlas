@@ -2,22 +2,14 @@
 
 ## Provisional encoder selection
 
-The leading candidate is **General CLAP**, `laion/clap-htsat-unfused`, at revision
-`8fa0f1c6d0433df6e97c127f64b2a1d6c0dcda8a`. In WCSS CPU job `6443546`, an average of
-49.7% of its five nearest neighbours shared a genre label with the query, compared with
-30.3% for Music CLAP. Both candidates used the same 128 training tracks in the earlier
-extractor. The music checkpoint also has a clearer risk of exposure to FMA because the
-published LAION music collection lists FMA. Track-level overlap remains unknown for both
-checkpoints.
-
-As of 26 November 2026 at 12:00 CET, the paired Hopper pilot (`6446080`) is pending
-in the WCSS queue. It will compare both checkpoints with the integrated extractor, measure
-throughput and peak memory. Compare it with the MusicFM-MSD pilot before choosing an
-encoder. The three-shard benchmark and full catalogue extraction are pending.
+General CLAP leads Music CLAP on both neighbour metrics in the paired Hopper pilot
+(`6446080`). The Music CLAP training collection also lists FMA as a source.
+The MusicFM-MSD Hopper pilot (`6448858`) is queued. Encoder selection, the three-shard
+benchmark and the full extraction follow its results.
 
 ## Dataset
 
-Both candidates use Music Atlas's artist-disjoint FMA split selected by `[dataset] split`. A quick run reads
+All candidates use Music Atlas's artist-disjoint FMA split selected by `[dataset] split`. A quick run reads
 the same 128 training tracks from the existing sample tar. A full run reads the three
 partitions together, opens each source tar once per attempt and visits each assigned track,
 including tracks without genre labels. The audited manifest used for preparation contains
@@ -75,8 +67,9 @@ statistics. We average the 25 Hz frames from hidden-state index 7 into one 1,024
 vector per window and apply the same window-to-track aggregation as CLAP. The adapter
 reuses the Transformers Conformer and records the pinned architecture configuration
 revision and weights checksum. It loads the release tensors on CPU before moving the
-inference model to the chosen device. The checkpoint preparation runs a two-waveform
-CPU smoke check. The quick pilot is the first measurement on FMA.
+inference model to the chosen device. WCSS CPU job `6448847` verified the release
+checkpoint SHA-256 and encoded two synthetic signals. It completed with exit code
+`0:0` in 2 min 12 s. The quick pilot is the first measurement on FMA.
 
 ## Measurements on WCSS
 
@@ -85,8 +78,7 @@ into the shared cache. Fetching the three required files took 7.00 seconds for t
 model and 8.36 seconds for the music model.
 
 CPU job `6443546` ran the earlier extractor with zero padding. The same 128 training
-tracks and batch size of 32 gave the following results on four CPU cores. The GPU
-comparison will use the integrated extractor and the checkpoints' short-audio padding.
+tracks and batch size of 32 gave the following results on four CPU cores.
 
 | Measurement | General CLAP | Music CLAP |
 |---|---:|---:|
@@ -112,6 +104,32 @@ from FMA shards 012 and 014. It killed the extraction process with SIGKILL after
 shard, then resumed it. Both runs retained the first shard byte for byte and produced the
 same ordered IDs and vectors as uninterrupted extraction (maximum absolute error 0.0).
 Each resumed run has an `evaluation/recovery.json` report linked to its earlier MLflow attempt.
+
+### Hopper pilot
+
+Job `6446080` completed with exit code `0:0` in 2 min 49 s. Both runs used batches of
+32 centred windows. The SHA-256 sums of `track_ids.npy` and `windows.parquet` match
+across runs, confirming identical track IDs and window positions.
+MLflow recorded the checkout as `267c036-dirty`. The recorded extraction source matches
+`53783ae`. The loader, representation and shard reader hashes match `4ba4ab5`, the
+revision used for the MusicFM-MSD pilot.
+
+| Encoder | Tracks | Failed | Precision at 5 | Genre vote macro AP | Tracks/s | Peak allocated GPU MiB |
+|---|---:|---:|---:|---:|---:|---:|
+| General CLAP | 128 | 0 | 49.69% | 0.2755 | 20.02 | 974.2 |
+| Music CLAP | 128 | 0 | 30.63% | 0.1662 | 30.36 | 1399.2 |
+
+| Encoder | Run | MLflow run ID |
+|---|---|---|
+| General CLAP | `embeddings-quick-20261126T130219Z-54f6` | `138b08a2c7c9498b9037c5a7887adf63` |
+| Music CLAP | `embeddings-quick-20261126T130236Z-c92f` | `a6abaff000714c2ba93e7ebf1bdbe7f1` |
+
+The random-neighbour precision was 27.66% and the constant-score macro AP was 0.1230 for
+the common sample. General CLAP retrieved a Rock neighbour for Rock/Folk track 15552
+and a Hip-Hop neighbour for Hip-Hop track 19726. Music CLAP retrieved the same
+Electronic/Experimental track for the Blues and Rock/Folk queries and found a
+Classical neighbour for Classical track 30130. Both runs produced 128 finite, nonzero
+window vectors.
 
 ## From audio to a reusable vector
 
@@ -171,8 +189,10 @@ sbatch --parsable -A "$ATLAS_ACCOUNT" scripts/slurm/embeddings.sbatch \
 ```
 
 Each quick run writes `evaluation/pilot.json` and `evaluation/performance.json` under
-`$ATLAS_ARTIFACTS_DIR/<encoder>/<run_id>/` and logs them to MLflow. Inspect the two runs
-together in the MLflow `embeddings` experiment. The paired pilot also attaches `evaluation/comparison.json`
+`$ATLAS_ARTIFACTS_DIR/<encoder>/<run_id>/` and logs them to MLflow. Inspect the three runs
+together in the MLflow `embeddings` experiment. Confirm that each run encoded 128 tracks
+with zero failures and compare the SHA-256 sums of `track_ids.npy` and `windows.parquet`
+across all three runs. The paired CLAP pilot also attaches `evaluation/comparison.json`
 with both candidates to each run. The report gives raw window norms, cosine similarity
 percentiles, counts of invalid projections and the nearest neighbours of selected example
 tracks. A pair shares a genre when at least one scored root tag matches. The comparison uses
@@ -192,8 +212,10 @@ Supply `--windows 5` to benchmark five windows. In that variant, windows 0, 2 an
 the usual three, so the saved raw vectors allow quality comparisons without re-encoding.
 
 ```bash
+bash .agents/skills/wcss-slurm/scripts/preflight.sh scripts/slurm/embeddings.sbatch \
+  -A "$ATLAS_ACCOUNT" --time="$BENCH_WALLTIME"
 sbatch -A "$ATLAS_ACCOUNT" --time="$BENCH_WALLTIME" \
-  scripts/slurm/embeddings.sbatch benchmark --encoder "$ENCODER"
+  scripts/slurm/embeddings.sbatch benchmark --encoder "$ENCODER" --windows 3
 ```
 
 Use the measured track rate and the assigned track count to calculate GPU hours
@@ -222,11 +244,15 @@ sbatch -A "$ATLAS_ACCOUNT" --time="$WALLTIME" scripts/slurm/embeddings.sbatch \
 
 A complete run reopens the final arrays and checks sorted unique IDs, partition coverage,
 shape, float32 values and unit norms. Row `i` of `vectors.npy` describes `track_ids.npy[i]`.
+In `evaluation/coverage.json`, verify that each partition's encoded count equals its
+expected count and that the failure count is zero. The report records the SHA-256 sums of
+the four final representation files.
 `metadata.json` records the manifest and configuration hashes, pinned weights, window rule,
 aggregation, software and dimensions. Both the frozen classifier and cosine retrieval can
 read the same arrays with `np.load(path, mmap_mode="r")`. Only a new audio query needs encoding.
-The expected track vector payload for 106,279 rows is 207.6 MiB plus IDs. The benchmark
-also estimates the size of the window arrays and the per-shard recovery files.
+The expected track vector payload for 106,279 rows is 207.6 MiB for CLAP or 415.2 MiB for
+MusicFM-MSD, plus IDs. The benchmark also estimates the size of the window arrays and the
+per-shard recovery files.
 
 Use `scripts/mlflow-ui.sh --ood` from a compute allocation or
 `sbatch scripts/slurm/mlflow-ui.sbatch` for the OOD link. The existing
