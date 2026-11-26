@@ -175,12 +175,14 @@ so one cache serves both variants.
 
 ### Window length
 
-Windows stay 10 s long. `atlas window-study` compares the centred 5, 10 and 20 s windows of
-the quick sample with the transform fixed: a longer window holds proportionally more onsets
-and sits nearer the whole track's average spectrum, but decoding, memory and the cache grow
-with it. From 5 to 10 s the share of windows whose spectrum is nearest their own track among
-the 128 rises from 59% to 66%; from 10 to 20 s only to 68%, at twice the cost. The run's
-`evaluation/results.csv` holds the table.
+Windows stay 10 s long for now. `atlas window-study` compares the centred 5, 10 and 20 s
+windows of the quick sample with the transform fixed: a longer window holds proportionally more
+onsets and sits nearer the whole track's average spectrum, but decoding, memory, the cache and
+CNN input grow with it. The share of windows whose spectrum is nearest their own track among
+the 128 is 59%, 66% and 68%; on 128 tracks one standard error is about 4 points, so the sample
+does not separate 10 from 20 s. Whether more audio per track helps the classifier is decided by
+the CNN in E3-05 (30 against 50 s per track). Each length is a child run of the study run,
+whose `evaluation/results.csv` holds the table.
 
 ## Comparisons
 
