@@ -125,6 +125,30 @@ def test_low_bitrate_mp3_windows_match_a_continuous_decode(tmp_path):
 
 
 @needs_mp3
+def test_id3_retries_earlier_sync_when_the_first_strict_header_fails(tmp_path, monkeypatch):
+    path = chirp_mp3(tmp_path / "chirp.mp3", 30)
+    expected = load_windows(path, 1, **FULL)
+    audio = path.read_bytes()
+    loose = b"\xff\xe5\x70\xbd"
+    false_header = b"\xff\xe3\x8c\x4e"
+    tagged = b"ID3\x04\0\0\0\0\0\0" + loose + false_header + audio
+    sound_file = sf.SoundFile
+
+    def decode(candidate):
+        payload = candidate.getvalue()
+        if payload in (tagged, false_header + audio):
+            raise sf.LibsndfileError(1)
+        assert payload == loose + false_header + audio
+        return sound_file(io.BytesIO(audio))
+
+    monkeypatch.setattr(sf, "SoundFile", decode)
+    actual = load_windows(io.BytesIO(tagged), 1, **FULL)
+    assert bounds(actual) == bounds(expected)
+    np.testing.assert_array_equal([window.samples for window in actual],
+                                  [window.samples for window in expected])
+
+
+@needs_mp3
 def test_truncated_mp3_windows_stay_within_the_decoded_audio(tmp_path):
     path = chirp_mp3(tmp_path / "full.mp3", 60, bitrate_mode="VARIABLE")
     truncated = tmp_path / "truncated.mp3"

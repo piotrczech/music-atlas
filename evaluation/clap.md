@@ -1,11 +1,12 @@
 # Frozen audio embeddings
 
-## Provisional encoder selection
+## Encoder selection
 
-General CLAP leads Music CLAP on both neighbour metrics in the paired Hopper pilot
-(`6446080`). The Music CLAP training collection also lists FMA as a source.
-The MusicFM-MSD Hopper pilot (`6448858`) is queued. Encoder selection, the three-shard
-benchmark and the full extraction follow its results.
+Select **General CLAP** (`clap-general`), `laion/clap-htsat-unfused` at revision
+`8fa0f1c6d0433df6e97c127f64b2a1d6c0dcda8a`. It led both neighbour metrics on the
+identical 128-track training sample and used the least GPU memory. Music CLAP had the
+highest throughput and lists FMA as a training source. Exact recording overlap with
+the benchmark remains uncertain. The three-shard benchmark is WCSS job `6451500`.
 
 ## Dataset
 
@@ -69,7 +70,7 @@ reuses the Transformers Conformer and records the pinned architecture configurat
 revision and weights checksum. It loads the release tensors on CPU before moving the
 inference model to the chosen device. WCSS CPU job `6448847` verified the release
 checkpoint SHA-256 and encoded two synthetic signals. It completed with exit code
-`0:0` in 2 min 12 s. The quick pilot is the first measurement on FMA.
+`0:0` in 2 min 12 s. Hopper job `6448858` then ran MusicFM-MSD on the FMA quick sample.
 
 ## Measurements on WCSS
 
@@ -105,31 +106,120 @@ shard, then resumed it. Both runs retained the first shard byte for byte and pro
 same ordered IDs and vectors as uninterrupted extraction (maximum absolute error 0.0).
 Each resumed run has an `evaluation/recovery.json` report linked to its earlier MLflow attempt.
 
-### Hopper pilot
+### Hopper pilots
 
-Job `6446080` completed with exit code `0:0` in 2 min 49 s. Both runs used batches of
-32 centred windows. The SHA-256 sums of `track_ids.npy` and `windows.parquet` match
-across runs, confirming identical track IDs and window positions.
-MLflow recorded the checkout as `267c036-dirty`. The recorded extraction source matches
-`53783ae`. The loader, representation and shard reader hashes match `4ba4ab5`, the
-revision used for the MusicFM-MSD pilot.
+CLAP job `6446080` completed with exit code `0:0` in 2 min 49 s. MusicFM-MSD job
+`6448858` completed with exit code `0:0` in 2 min 12 s. Each run used a batch size of
+32 and one centred 10-second window per track. The SHA-256 sums of `track_ids.npy` and
+`windows.parquet` match for all three runs. Their manifest and input-track hashes also
+match. MLflow recorded the CLAP checkout as `267c036-dirty`. The recorded extraction
+source matches `53783ae`. The loader, representation and shard reader hashes match
+`4ba4ab5`, the revision used for the MusicFM-MSD pilot.
 
 | Encoder | Tracks | Failed | Precision at 5 | Genre vote macro AP | Tracks/s | Peak allocated GPU MiB |
 |---|---:|---:|---:|---:|---:|---:|
 | General CLAP | 128 | 0 | 49.69% | 0.2755 | 20.02 | 974.2 |
 | Music CLAP | 128 | 0 | 30.63% | 0.1662 | 30.36 | 1399.2 |
+| MusicFM-MSD | 128 | 0 | 37.81% | 0.2146 | 19.55 | 9622.9 |
 
 | Encoder | Run | MLflow run ID |
 |---|---|---|
 | General CLAP | `embeddings-quick-20261126T130219Z-54f6` | `138b08a2c7c9498b9037c5a7887adf63` |
 | Music CLAP | `embeddings-quick-20261126T130236Z-c92f` | `a6abaff000714c2ba93e7ebf1bdbe7f1` |
+| MusicFM-MSD | `embeddings-quick-20261127T005600Z-3532` | `0161f18436304517ae74dd95c6aa4308` |
 
 The random-neighbour precision was 27.66% and the constant-score macro AP was 0.1230 for
 the common sample. General CLAP retrieved a Rock neighbour for Rock/Folk track 15552
 and a Hip-Hop neighbour for Hip-Hop track 19726. Music CLAP retrieved the same
 Electronic/Experimental track for the Blues and Rock/Folk queries and found a
-Classical neighbour for Classical track 30130. Both runs produced 128 finite, nonzero
-window vectors.
+Classical neighbour for Classical track 30130. MusicFM-MSD found Hip-Hop and Classical
+neighbours for tracks 19726 and 30130, respectively, and shared General CLAP's closest
+neighbour for the Blues query 12099. All three runs produced 128 finite, nonzero window
+vectors. The examples and scores describe retrieval on the training sample.
+
+### Three-shard benchmark
+
+Job `6451500` completed with exit code `0:0` in 9 min 38 s on one H100. Each batch
+size encoded all 1,642 tracks from `026.tar`, `078.tar` and `130.tar` with three windows
+per track and zero failures. The output track IDs and window positions match byte for byte.
+
+| Windows per batch | Tracks/s | Peak allocated GPU MiB | Peak reserved GPU MiB | Estimated GPU hours | Suggested wall time |
+|---:|---:|---:|---:|---:|---:|
+| 16 | 5.79 | 558.8 | 652.0 | 5.10 | 06:43:00 |
+| 32 | 7.40 | 974.2 | 1110.0 | 3.99 | 05:17:00 |
+
+| Windows per batch | Run | MLflow run ID |
+|---:|---|---|
+| 16 | `embeddings-full-20261127T113302Z-c1f1` | `95b22cfce5fd4d93a02c34cc9f91d13b` |
+| 32 | `embeddings-full-20261127T113757Z-a71a` | `5aa1a6d34a3e4b01b8c34f0ebf27133a` |
+
+Batch 32 ran second, so warm filesystem caches could contribute to its measured gain.
+It had ample memory headroom. The production run uses batch 32, three windows per track
+and the suggested wall time of 5 hr 17 min. The projected PD footprint is 1.43 GiB for
+track vectors and IDs, window files and resumable shard parts combined. Full extraction
+was submitted as WCSS job `6453884` from checkout `4ba4ab5`.
+
+### Full extraction attempt
+
+Job `6453884` ended with status `FAILED` and exit code `1:0` after 4 hr 48 min 43 s.
+Run `embeddings-full-20261128T014136Z-06a4` (MLflow `f252aa66eee649d792dc30b45b7ae1b4`)
+saved 106,277 512-dimensional track vectors and 317,791 window vectors. The maximum
+absolute track norm error was `1.19e-7`.
+
+| Partition | Expected | Encoded |
+|---|---:|---:|
+| Train | 85,023 | 85,021 |
+| Validation | 10,628 | 10,628 |
+| Test | 10,628 | 10,628 |
+
+Both failures were in training. libsndfile reported `Format not recognised` for tracks
+`40546` and `92123`. All 156 shard part files remain on PD. The attempt's
+`evaluation/coverage.json`, checksums, and `failed.csv` are under
+`$ATLAS_ARTIFACTS_DIR/clap-general/embeddings-full-20261128T014136Z-06a4/`.
+Complete coverage requires decoding both failed tracks.
+
+### Decoder fix and recovery
+
+CPU probe `6459520` reproduced both failures. In each file, the first strict MPEG
+header candidate after the ID3 tag led to an unrecognised-format error. Starting the
+decoder at the earlier MPEG sync candidate restored the decoded duration recorded in
+the FMA audit. The shared loader now tries that earlier offset after the strict
+candidate fails with this error. Successful reads follow their existing path.
+
+CPU validation job `6459585` verified the source MP3s against the inventory SHA-1,
+decoded all three windows from each recovered track, and matched their final endpoints
+to the audited durations. All 128 quick-sample windows matched the previous loader
+bit for bit at 48 kHz. GPU recovery job `6459668` uses a separate run directory and
+the same encoder, manifest, batch size and window settings. It reuses the 154
+successful shard files and re-encodes shards `040` and `092`. The original failed
+run remains available in MLflow and on PD.
+
+### Verified full embeddings
+
+Recovery job `6459668` completed with exit code `0:0` in 7 min 47 s. The completed
+run is `embeddings-full-20261128T131619Z-7a2b`, with MLflow ID
+`0dcb7f354cc14448bbc11c8ad30cc700`. It uses General CLAP at revision
+`8fa0f1c6d0433df6e97c127f64b2a1d6c0dcda8a`, split
+`fma-cap10-v1-46a89930d45ea6fb`, and manifest SHA-256
+`28fac223066f19c8a04a11322c257a019ae998ee975856c40a7441f189c2aaa1`.
+
+| Partition | Expected | Encoded |
+|---|---:|---:|
+| Train | 85,023 | 85,023 |
+| Validation | 10,628 | 10,628 |
+| Test | 10,628 | 10,628 |
+| **Total** | **106,279** | **106,279** |
+
+The run has zero failures, 106,279 track vectors and 317,797 window vectors, each
+with 512 float32 components. The maximum absolute track norm error is `1.19e-7`.
+The recovery job independently verified the final file sizes and all four SHA-256
+sums against `evaluation/coverage.json`. It also verified byte-for-byte equality
+for the 154 reused shard files. `evaluation/recovery.json` records the loader
+hashes and links to the failed attempt.
+
+```text
+/lustre/pd03/hpc-piotrczech-1792095018/music-atlas/artifacts/clap-general/embeddings-full-20261128T131619Z-7a2b/
+```
 
 ## From audio to a reusable vector
 

@@ -34,10 +34,21 @@ def open_audio(source: str | Path | BinaryIO) -> sf.SoundFile:
         # A Layer III frame header with a real bitrate. A looser `\xff[\xe0-\xff]` also matches
         # padding such as ff ff 00 00, and mpg123 then prints "Illegal Audio-MPEG-Header".
         header = re.compile(rb"\xff[\xe2\xe3\xf2\xf3\xfa\xfb][\x10-\xeb]")
-        start = header.search(data, end + (10 if data[5] & 0x10 else 0))
+        offset = end + (10 if data[5] & 0x10 else 0)
+        start = header.search(data, offset)
         if start is None:
             raise
-        return sf.SoundFile(io.BytesIO(data[start.start() :]))
+        try:
+            return sf.SoundFile(io.BytesIO(data[start.start() :]))
+        except sf.LibsndfileError as frame_error:
+            if frame_error.code != 1:  # SF_ERR_UNRECOGNISED_FORMAT
+                raise
+            # A false header in the tag padding can make mpg123 miss the stream. Let it
+            # scan from the earlier MPEG sync candidate, as it did in the FMA audit.
+            earlier = re.compile(rb"\xff[\xe0-\xff]").search(data, offset)
+            if earlier is None or earlier.start() >= start.start():
+                raise
+            return sf.SoundFile(io.BytesIO(data[earlier.start() :]))
 
 
 @dataclass(frozen=True)
